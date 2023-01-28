@@ -89,21 +89,29 @@ def add_message(message):
     conn.close()
     bot.send_message(message.chat.id, 'Xingamento adicionado com sucesso! Seu zuero!')
 
+
 @bot.message_handler(commands=['list'])
 def list_message(message):
-    if not start:
-        return
-    conn = sqlite3.connect('frases.db')
-    c = conn.cursor()
-    c.execute("SELECT id, frase FROM frases")
-    frases = c.fetchall()
-    conn.close()
-    if not frases:
-        bot.send_message(message.chat.id, 'Não há frases cadastradas.')
+    chat_id = message.chat.id
+    if message.chat.type != 'private':
+        admin_ids = [admin.user.id for admin in bot.get_chat_administrators(chat_id) if admin.status != 'creator']
+        owner_id = [admin for admin in bot.get_chat_administrators(chat_id) if admin.status == 'creator'][0].user.id
+        if message.from_user.id == owner_id or message.from_user.id in admin_ids:
+            conn = sqlite3.connect('frases.db')
+            c = conn.cursor()
+            c.execute("SELECT id, frase FROM frases")
+            frases = c.fetchall()
+            conn.close()
+            if not frases:
+                bot.send_message(message.chat.id, 'Não há frases cadastradas.')
+            else:
+                bot.send_message(message.chat.id, 'Frases cadastradas:')
+                for frase in frases:
+                    bot.send_message(message.chat.id, f'{frase[0]}: {frase[1]}')
+        else:
+            bot.send_message(message.chat.id, 'Apenas o administrador e o dono do grupo podem executar este comando')
     else:
-        bot.send_message(message.chat.id, 'Frases cadastradas:')
-        for frase in frases:
-            bot.send_message(message.chat.id, f'{frase[0]}: {frase[1]}')
+        bot.send_message(message.chat.id, 'Este comando não pode ser usado em chats privados')
 
 @bot.message_handler(commands=['remover'])
 def remover_message(message):
