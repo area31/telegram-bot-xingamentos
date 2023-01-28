@@ -44,6 +44,14 @@ def start_message(message):
     start = True
     bot.send_message(message.chat.id, 'Bot iniciado!')
 
+@bot.message_handler(commands=['euro'])
+def euro_message(message):
+    url = 'https://economia.awesomeapi.com.br/all/EUR-BRL'
+    r = requests.get(url)
+    euro_data = r.json()
+    valor_euro = euro_data['EUR']['bid']
+    bot.send_message(message.chat.id, 'O valor atual do euro em reais é R$ ' + valor_euro)
+
 @bot.message_handler(commands=['dolar'])
 def dolar_message(message):
     url = 'https://economia.awesomeapi.com.br/all/USD-BRL'
