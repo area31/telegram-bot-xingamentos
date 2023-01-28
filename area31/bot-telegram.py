@@ -44,6 +44,10 @@ def start_message(message):
     start = True
     bot.send_message(message.chat.id, 'Bot iniciado!')
 
+@bot.message_handler(commands=['real'])
+def reais_message(message):
+    bot.send_message(message.chat.id, 'O real não vale nada, é uma bosta essa moeda estatal de merda!')
+
 @bot.message_handler(commands=['euro'])
 def euro_message(message):
     url = 'https://economia.awesomeapi.com.br/all/EUR-BRL'
@@ -83,7 +87,12 @@ def help_message(message):
     bot.send_message(message.chat.id, '/add - Adiciona um xingamento, mas seja insolente por favor')
     bot.send_message(message.chat.id, '/list - Lista os xingamentos cadastrados')
     bot.send_message(message.chat.id, '/remover - Remove um xingamento')
-    bot.send_message(message.chat.id, '/xinga - envia um xingamento aleatório')
+    bot.send_message(message.chat.id, '/xinga - Envia um xingamento aleatório')
+    bot.send_message(message.chat.id, '/dolar - Exibe a cotação do dolar em reais')
+    bot.send_message(message.chat.id, '/euro - Exibe a cotação do euro em reais')
+    bot.send_message(message.chat.id, '/btc - Exibe a cotação do Bitcoin em dolares')
+    bot.send_message(message.chat.id, '/xmr - Exibe a cotação do Monero em dolares')
+    bot.send_message(message.chat.id, '/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...')
 
 @bot.message_handler(commands=['add'])
 def add_message(message):
