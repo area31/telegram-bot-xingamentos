@@ -1,6 +1,7 @@
 import configparser
 import random
 import sqlite3
+import requests
 import sys
 from typing import Tuple
 sys.path.append('/home/morfetico/.local/lib/python3.10/site-packages/')
@@ -42,6 +43,30 @@ def start_message(message):
     global start
     start = True
     bot.send_message(message.chat.id, 'Bot iniciado!')
+
+@bot.message_handler(commands=['dolar'])
+def dolar_message(message):
+    url = 'https://economia.awesomeapi.com.br/all/USD-BRL'
+    r = requests.get(url)
+    dolar_data = r.json()
+    valor_dolar = dolar_data['USD']['bid']
+    bot.send_message(message.chat.id, 'O valor atual do dólar em reais é R$ ' + valor_dolar)
+
+@bot.message_handler(commands=['btc'])
+def bitcoin_price(message):
+    url = 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd'
+    response = requests.get(url)
+    data = response.json()
+    btc_usd = data['bitcoin']['usd']
+    bot.send_message(message.chat.id, f'Cotação atual do Bitcoin: ${btc_usd}')
+
+@bot.message_handler(commands=['xmr'])
+def handle_btc(message):
+    url = "https://api.coincap.io/v2/assets/monero"
+    response = requests.get(url)
+    data = response.json()
+    price = data['data']['priceUsd']
+    bot.send_message(message.chat.id, f'Cotação atual do Monero: ${price}')
 
 @bot.message_handler(commands=['ajuda'])
 def help_message(message):
