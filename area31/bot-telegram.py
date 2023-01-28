@@ -82,17 +82,18 @@ def handle_btc(message):
 
 @bot.message_handler(commands=['ajuda'])
 def help_message(message):
-    bot.send_message(message.chat.id, 'Comandos disponíveis:')
-    bot.send_message(message.chat.id, '/start - Inicia o bot')
-    bot.send_message(message.chat.id, '/add - Adiciona um xingamento, mas seja insolente por favor')
-    bot.send_message(message.chat.id, '/list - Lista os xingamentos cadastrados')
-    bot.send_message(message.chat.id, '/remover - Remove um xingamento')
-    bot.send_message(message.chat.id, '/xinga - Envia um xingamento aleatório')
-    bot.send_message(message.chat.id, '/dolar - Exibe a cotação do dolar em reais')
-    bot.send_message(message.chat.id, '/euro - Exibe a cotação do euro em reais')
-    bot.send_message(message.chat.id, '/btc - Exibe a cotação do Bitcoin em dolares')
-    bot.send_message(message.chat.id, '/xmr - Exibe a cotação do Monero em dolares')
-    bot.send_message(message.chat.id, '/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...')
+    help_text = 'Comandos disponíveis:\n'
+    help_text += '/start - Inicia o bot\n'
+    help_text += '/add - Adiciona um xingamento, mas seja insolente por favor\n'
+    help_text += '/list - Lista os xingamentos cadastrados\n'
+    help_text += '/remover - Remove um xingamento\n'
+    help_text += '/xinga - Envia um xingamento aleatório\n'
+    help_text += '/dolar - Exibe a cotação do dolar em reais\n'
+    help_text += '/euro - Exibe a cotação do euro em reais\n'
+    help_text += '/btc - Exibe a cotação do Bitcoin em dolares\n'
+    help_text += '/xmr - Exibe a cotação do Monero em dolares\n'
+    help_text += '/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...'
+    bot.send_message(message.chat.id, help_text)
 
 @bot.message_handler(commands=['add'])
 def add_message(message):
