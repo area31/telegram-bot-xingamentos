@@ -1,0 +1,58 @@
+#!/sbin/openrc-run
+# Copyright 2023 Gentoo Authors
+# Distributed under the terms of the GNU General Public License v2
+#set -x
+
+USER="morfetico"
+GROUP="area31"
+BOTDIR="$(getent passwd ${USER} | cut -d: -f6)/${GROUP}"
+
+depend() {
+need net
+}
+
+start() {
+ebegin "Iniciando o Bot-Telegram \"${USER}\"/${GROUP}"
+echo -e "cd ${BOTDIR} ; python ${BOTDIR}/bot-telegram.py" > ${BOTDIR}/start.sh
+chmod +x ${BOTDIR}/start.sh
+mv ${BOTDIR}/bot-telegram.log2 ${BOTDIR}/bot-telegram.log3 2> /dev/null
+mv ${BOTDIR}/bot-telegram.log ${BOTDIR}/bot-telegram.log2 2> /dev/null
+#su ${USER} -c "nohup ${BOTDIR}/start.sh > ${BOTDIR}/bot-telegram.log &" 2>/dev/null
+su ${USER} -c "nohup ${BOTDIR}/start.sh > ${BOTDIR}/bot-telegram.log &" 
+
+}
+
+stop() {
+ebegin "Parando o Bot-Telegram \"${USER}\""
+CHECK=$(pgrep -f "python ${BOTDIR}/bot-telegram.py"|wc -l)
+if [ "$CHECK" -ne 0 ]; then
+	pgrep -f "python ${BOTDIR}/bot-telegram.py"|xargs kill
+fi
+
+#CHECK2=$(pgrep telegram-cli|wc -l)
+#if [ "$CHECK2" -ne 0 ]; then
+#	pgrep telegram-cli|xargs kill
+#fi
+echo -e ""
+}
+
+status() {
+ebegin "Processo em execução"
+
+echo -e "\nUSER: ${USER}"
+
+CHECK=$(pgrep -f "bash ${BOTDIR}/start.sh"|wc -l)
+if [ "$CHECK" -ne 0 ]; then
+	echo -e "start.sh PID: $(pgrep -f "bash ${BOTDIR}/start.sh")"
+else
+	echo -e "start.sh NOT running. Please restart bot-telegram"
+fi
+
+#CHECK2=$(pgrep -u${USER} telegram-cli|wc -l)
+#if [ "$CHECK2" -ne 0 ]; then
+#	echo -e "telegram-cli PID: $(pgrep -u${USER} telegram-cli)"
+#else
+#	echo -e "telegram-cli NOT running. Please restart bot-telegram"
+#fi
+echo -e ""
+}
