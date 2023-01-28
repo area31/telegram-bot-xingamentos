@@ -62,7 +62,7 @@ def add_message(message):
     c.execute("INSERT INTO frases (frase) VALUES (?)", (frase,))
     conn.commit()
     conn.close()
-    bot.send_message(message.chat.id, 'Frase adicionada com sucesso!')
+    bot.send_message(message.chat.id, 'Xingamento adicionado com sucesso! Seu zuero!')
 
 @bot.message_handler(commands=['list'])
 def list_message(message):
