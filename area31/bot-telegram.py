@@ -135,14 +135,18 @@ def list_message(message):
 def remover_message(message):
     if not start:
         return
+    frase_list = message.text.split()
+    if len(frase_list) < 2:
+        bot.send_message(message.chat.id, 'Insira uma frase válida para remover')
+        return
+    frase = frase_list[1]
     conn = sqlite3.connect('frases.db')
     c = conn.cursor()
-    frase = message.text.split()[1]
-
     c.execute("DELETE FROM frases WHERE ID = ?", (frase,))
     conn.commit()
     conn.close()
     bot.send_message(message.chat.id, 'Frase removida com sucesso!')
+
 
 @bot.message_handler(commands=['xinga'])
 def random_message(message):
