@@ -143,19 +143,6 @@ def list_message(message):
 
                     mensagem_enviada = True
                     break
-                      #  if not mensagem_enviada:
-                      #      bot.send_message(message.chat.id, mensagem)
-                      #      time.sleep(5)  # delay de 5s entre uma msg e outra
-                      #      mensagem_enviada = True
-                      #      break
-                      #  else:
-                      #      break
-                      #      mensagem = ''
-                      #      if mensagem and not mensagem_enviada:
-                      #           bot.send_message(message.chat.id, mensagem)
-                      #           mensagem_enviada = True
-                      #           break
-
 
         else:
             bot.send_message(message.chat.id, 'Apenas o administrador e o dono do grupo podem executar este comando')
