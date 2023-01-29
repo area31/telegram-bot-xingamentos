@@ -100,6 +100,11 @@ def help_message(message):
 def add_message(message):
     if not start:
         return
+    text = message.text.split()
+    if len(text) < 2:
+        bot.send_message(message.chat.id, 'Comando inválido. Use /add e insira o xingamento')
+        return
+    frase = text[1]
     if len(message.text.split(' ', 1)[1]) > 150:
         bot.send_message(message.chat.id, 'Xingamento muito longo, por favor use até 150 caracteres')
         return
