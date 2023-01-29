@@ -100,13 +100,16 @@ def help_message(message):
 def add_message(message):
     if not start:
         return
+    if len(message.text.split(' ', 1)[1]) > 150:
+        bot.send_message(message.chat.id, 'Frase muito longa, por favor use até 150 caracteres')
+        return
     conn = sqlite3.connect('frases.db')
     c = conn.cursor()
     frase = message.text.split(' ', 1)[1]
     c.execute("INSERT INTO frases (frase) VALUES (?)", (frase,))
     conn.commit()
     conn.close()
-    bot.send_message(message.chat.id, 'Xingamento adicionado com sucesso! Seu zuero!')
+    bot.send_message(message.chat.id, 'Frase adicionada com sucesso!')
 
 
 @bot.message_handler(commands=['list'])
@@ -127,7 +130,7 @@ def list_message(message):
                 for frase in frases:
                     mensagem_enviada = False
                     bot.send_message(message.chat.id, 'Frases cadastradas:')
-                    chunk_size = 10  # numero de frases por mensagem
+                    chunk_size = 20  # numero de frases por mensagem
                     if not mensagem_enviada:
                         for i in range(0, len(frases), chunk_size):
                             mensagem = '\n'.join([f'{frase[0]}: {frase[1]}' for frase in frases[i:i+chunk_size]])
@@ -140,6 +143,18 @@ def list_message(message):
 
                     mensagem_enviada = True
                     break
+                      #  if not mensagem_enviada:
+                      #      bot.send_message(message.chat.id, mensagem)
+                      #      time.sleep(5)  # delay de 5s entre uma msg e outra
+                      #      mensagem_enviada = True
+                      #      break
+                      #  else:
+                      #      break
+                      #      mensagem = ''
+                      #      if mensagem and not mensagem_enviada:
+                      #           bot.send_message(message.chat.id, mensagem)
+                      #           mensagem_enviada = True
+                      #           break
 
 
         else:
