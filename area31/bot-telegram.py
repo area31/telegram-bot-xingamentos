@@ -7,6 +7,12 @@ import sys
 from typing import Tuple
 sys.path.append('/home/morfetico/.local/lib/python3.10/site-packages/')
 import telebot
+import shutil
+
+src_file = "telegram-bot.log"
+dst_file = "telegram-bot.log2"
+
+shutil.move(src_file, dst_file)
 
 def create_table():
     # Conectando ao banco de dados
