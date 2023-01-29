@@ -37,14 +37,6 @@ config.read('token-telegram.cfg')
 TOKEN = config['DEFAULT']['TOKEN']
 bot = telebot.TeleBot(TOKEN)
 
-start = False
-
-@bot.message_handler(commands=['start'])
-def start_message(message):
-    global start
-    start = True
-    bot.send_message(message.chat.id, 'Bot iniciado!')
-
 @bot.message_handler(commands=['real'])
 def reais_message(message):
     bot.send_message(message.chat.id, 'O real não vale nada, é uma bosta essa moeda estatal de merda!')
@@ -84,7 +76,6 @@ def handle_btc(message):
 @bot.message_handler(commands=['ajuda'])
 def help_message(message):
     help_text = 'Comandos disponíveis:\n'
-    help_text += '/start - Inicia o bot\n'
     help_text += '/add - Adiciona um xingamento, mas seja insolente por favor\n'
     help_text += '/list - Lista os xingamentos cadastrados\n'
     help_text += '/remover - Remove um xingamento\n'
@@ -98,8 +89,6 @@ def help_message(message):
 
 @bot.message_handler(commands=['add'])
 def add_message(message):
-    if not start:
-        return
     text = message.text.split()
     if len(text) < 2:
         bot.send_message(message.chat.id, 'Comando inválido. Use /add e insira o xingamento')
@@ -156,8 +145,6 @@ def list_message(message):
 
 @bot.message_handler(commands=['remover'])
 def remover_message(message):
-    if not start:
-        return
     frase_list = message.text.split()
     if len(frase_list) < 2:
         bot.send_message(message.chat.id, 'Insira uma frase válida para remover')
@@ -173,8 +160,6 @@ def remover_message(message):
 
 @bot.message_handler(commands=['xinga'])
 def random_message(message):
-    if not start:
-        return
     conn = sqlite3.connect('frases.db')
     c = conn.cursor()
     c.execute("SELECT frase FROM frases")
