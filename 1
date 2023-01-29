@@ -1,5 +1,4 @@
 import configparser
-import time
 import random
 import sqlite3
 import requests
@@ -124,24 +123,15 @@ def list_message(message):
             if not frases:
                 bot.send_message(message.chat.id, 'Não há frases cadastradas.')
             else:
+                bot.send_message(message.chat.id, 'Frases cadastradas:')
                 for frase in frases:
-                    mensagem_enviada = False
-                    bot.send_message(message.chat.id, 'Frases cadastradas:')
-                    chunk_size = 10  # numero de frases por mensagem
-                    if not mensagem_enviada:
-                        for i in range(0, len(frases), chunk_size):
-                            mensagem = '\n'.join([f'{frase[0]}: {frase[1]}' for frase in frases[i:i+chunk_size]])
-                            bot.send_message(message.chat.id, mensagem)
-                            time.sleep(5)
-                            mensagem_enviada = True
-                    else:
-                        mensagem_enviada = True
-                        break
+#                    mensagem = 'Frases cadastradas: \n'
+#                    for frase in frases:
+#                        mensagem += f'{frase[0]}: {frase[1]} \n'
+#                    bot.send_message(message.chat.id, mensagem)
 
-                    mensagem_enviada = True
-                    break
-
-
+                   bot.send_message(message.chat.id, f'{frase[0]}: {frase[1]}')
+#                    bot.send_message(message.chat.id, 'Frases cadastradas: ' + '\n'.join(f'{frase[0]}: {frase[1]}' for frase in frases))
         else:
             bot.send_message(message.chat.id, 'Apenas o administrador e o dono do grupo podem executar este comando')
     else:
