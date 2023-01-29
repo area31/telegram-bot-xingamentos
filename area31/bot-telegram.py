@@ -9,6 +9,8 @@ sys.path.append('/home/morfetico/.local/lib/python3.10/site-packages/')
 import telebot
 import shutil
 
+with open("telegram-bot.log", "w") as file:
+    pass
 src_file = "telegram-bot.log"
 dst_file = "telegram-bot.log2"
 
