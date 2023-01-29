@@ -101,7 +101,7 @@ def add_message(message):
     if not start:
         return
     if len(message.text.split(' ', 1)[1]) > 150:
-        bot.send_message(message.chat.id, 'Frase muito longa, por favor use até 150 caracteres')
+        bot.send_message(message.chat.id, 'Xingamento muito longo, por favor use até 150 caracteres')
         return
     conn = sqlite3.connect('frases.db')
     c = conn.cursor()
@@ -109,7 +109,7 @@ def add_message(message):
     c.execute("INSERT INTO frases (frase) VALUES (?)", (frase,))
     conn.commit()
     conn.close()
-    bot.send_message(message.chat.id, 'Frase adicionada com sucesso!')
+    bot.send_message(message.chat.id, 'Xingamento adicionado com sucesso! Seu zuero!')
 
 
 @bot.message_handler(commands=['list'])
@@ -129,7 +129,7 @@ def list_message(message):
             else:
                 for frase in frases:
                     mensagem_enviada = False
-                    bot.send_message(message.chat.id, 'Frases cadastradas:')
+                    bot.send_message(message.chat.id, 'Xingamentos cadastrados:')
                     chunk_size = 20  # numero de frases por mensagem
                     if not mensagem_enviada:
                         for i in range(0, len(frases), chunk_size):
@@ -163,7 +163,7 @@ def remover_message(message):
     c.execute("DELETE FROM frases WHERE ID = ?", (frase,))
     conn.commit()
     conn.close()
-    bot.send_message(message.chat.id, 'Frase removida com sucesso!')
+    bot.send_message(message.chat.id, 'Xingamento removido com sucesso!')
 
 
 @bot.message_handler(commands=['xinga'])
