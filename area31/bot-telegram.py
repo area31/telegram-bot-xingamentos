@@ -72,7 +72,7 @@ def respond_to_mentions(message):
 @bot.message_handler(commands=['search'])
 def search_command(message):
     query = message.text.replace("/search", "").strip()
-    
+
     if not query:
         bot.send_message(chat_id=message.chat.id, text="Por favor, execute o /search com algum termo de busca")
         return
@@ -82,7 +82,11 @@ def search_command(message):
     search_url = f"https://www.googleapis.com/customsearch/v1?key={API_KEY}&cx={SEARCH_ENGINE_ID}&q={query}"
 
     try:
-        results = requests.get(search_url).json()["items"]
+        results = requests.get(search_url).json()
+        if results.get("searchInformation").get("totalResults") == "0":
+            bot.send_message(chat_id=message.chat.id, text="Não foram encontrados resultados para a sua pesquisa.")
+            return
+        results = results["items"]
         response = "Resultados da pesquisa para '" + query + "': \n"
         for result in results[:5]:
             response += result["title"] + " - " + result["link"] + "\n"
@@ -90,7 +94,6 @@ def search_command(message):
         response = "Desculpe, ocorreu um erro ao acessar a API do Google. Por favor, tente novamente mais tarde."
 
     bot.send_message(chat_id=message.chat.id, text=response)
-
 
 
 
