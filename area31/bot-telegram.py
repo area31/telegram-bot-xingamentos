@@ -68,6 +68,32 @@ def respond_to_mentions(message):
 
     bot.send_message(chat_id=message.chat.id, text=response)
 
+# Adiciona o comando de busca no YouTube
+@bot.message_handler(commands=['youtube'])
+def youtube_search_command(message):
+    query = message.text.replace("/youtube", "").strip()
+
+    if not query:
+        bot.send_message(chat_id=message.chat.id, text="Por favor, execute o /youtube com algum termo de busca")
+        return
+
+    API_KEY = open("token-google.cfg").read().strip() # API Key do Google
+    search_url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&key={API_KEY}"
+
+    try:
+        results = requests.get(search_url).json()
+        if results.get("pageInfo").get("totalResults") == 0:
+            bot.send_message(chat_id=message.chat.id, text="Não foram encontrados resultados para a sua pesquisa.")
+            return
+        results = results["items"]
+        response = "Resultados da pesquisa no YouTube para '" + query + "': \n"
+        for result in results[:5]:
+            response += result["snippet"]["title"] + " - https://www.youtube.com/watch?v=" + result["id"]["videoId"] + "\n"
+    except (requests.exceptions.RequestException, KeyError) as e:
+        response = "Desculpe, ocorreu um erro ao acessar a API do YouTube. Por favor, tente novamente mais tarde."
+
+    bot.send_message(chat_id=message.chat.id, text=response)
+
 # Adiciona o comando de busca usando o Google
 @bot.message_handler(commands=['search'])
 def search_command(message):
