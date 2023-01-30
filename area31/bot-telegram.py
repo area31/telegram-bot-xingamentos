@@ -171,6 +171,7 @@ def help_message(message):
     help_text += '/btc - Exibe a cotação do Bitcoin em dolares\n'
     help_text += '/xmr - Exibe a cotação do Monero em dolares\n'
     help_text += '/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...\n'
+    help_text += '/youtube - Exibe resultados de busca de vídeos no Youtube\n'
     help_text += '/search - Exibe resultados de busca no Google'
     bot.send_message(message.chat.id, help_text)
 
