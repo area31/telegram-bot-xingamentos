@@ -165,7 +165,6 @@ def remover_message(message):
     conn.close()
     bot.send_message(message.chat.id, 'Xingamento removido com sucesso!')
 
-
 @bot.message_handler(commands=['xinga'])
 def random_message(message):
     conn = sqlite3.connect('frases.db')
@@ -177,7 +176,12 @@ def random_message(message):
         bot.send_message(message.chat.id, 'Não há frases cadastradas.')
     else:
         frase_escolhida = random.choice(frases)[0]
-        bot.send_message(message.chat.id, frase_escolhida)
+        if message.reply_to_message:
+            bot.reply_to(message.reply_to_message, "@{} {}".format(message.reply_to_message.from_user.username, frase_escolhida))
+        elif '@' in message.text:
+            username = message.text.split()[1][1:]
+            bot.send_message(message.chat.id, "@{} {}".format(username, frase_escolhida))
+        else:
+            bot.send_message(message.chat.id, frase_escolhida)
 
 bot.polling()
-
