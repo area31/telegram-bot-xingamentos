@@ -8,6 +8,7 @@ from typing import Tuple
 sys.path.append('/home/morfetico/.local/lib/python3.10/site-packages/')
 import telebot
 import shutil
+import openai
 
 with open("telegram-bot.log", "w") as file:
     pass
@@ -40,10 +41,31 @@ def get_random_frase()->str:
 
 create_table()
 
-config = configparser.ConfigParser()
-config.read('token-telegram.cfg')
-TOKEN = config['DEFAULT']['TOKEN']
+config1 = configparser.ConfigParser()
+config1.read('token-telegram.cfg')
+TOKEN = config1['DEFAULT']['TOKEN']
 bot = telebot.TeleBot(TOKEN)
+
+config2 = configparser.ConfigParser()
+config2.read('token-openai.cfg')
+openai_key = config2['DEFAULT']['API_KEY']
+openai.api_key = openai_key
+
+@bot.message_handler(func=lambda message: message.text is not None and bot.get_me().username in message.text)
+def respond_to_mentions(message):
+    try:
+        response = openai.Completion.create(
+            engine="text-davinci-002",
+            prompt="Responda a seguinte pergunta: " + message.text.replace("@" + bot.get_me().username, ""),
+            max_tokens=1024,
+            n=1,
+            stop=None,
+            temperature=0.5,
+        ).choices[0].text
+    except (openai.OpenAIError, requests.exceptions.RequestException) as e:
+        response = "Desculpe, ocorreu um erro ao me conectar à API do OpenAI. Por favor, tente novamente mais tarde."
+
+    bot.send_message(chat_id=message.chat.id, text=response)
 
 @bot.message_handler(commands=['real'])
 def reais_message(message):
