@@ -11,6 +11,9 @@ git clone https://github.com/area31/telegram-bot-xingamentos.git
 
 ```bash
 pip3 install pyTelegramBotAPI --user
+pip3 install openai --user
+pip3 install attrs --user
+pip3 install aiohttp --user
 ```
 
 ## Usage
