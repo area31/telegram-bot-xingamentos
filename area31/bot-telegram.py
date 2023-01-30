@@ -9,6 +9,7 @@ sys.path.append('/home/morfetico/.local/lib/python3.10/site-packages/')
 import telebot
 import shutil
 import openai
+import urllib.parse
 
 with open("telegram-bot.log", "w") as file:
     pass
@@ -67,6 +68,32 @@ def respond_to_mentions(message):
 
     bot.send_message(chat_id=message.chat.id, text=response)
 
+# Adiciona o comando de busca usando o Google
+@bot.message_handler(commands=['search'])
+def search_command(message):
+    query = message.text.replace("/search", "").strip()
+    
+    if not query:
+        bot.send_message(chat_id=message.chat.id, text="Por favor, execute o /search com algum termo de busca")
+        return
+
+    API_KEY = open("token-google.cfg").read().strip() # API Key do Google
+    SEARCH_ENGINE_ID = open("token-google-engine.cfg").read().strip() # API Key do Google
+    search_url = f"https://www.googleapis.com/customsearch/v1?key={API_KEY}&cx={SEARCH_ENGINE_ID}&q={query}"
+
+    try:
+        results = requests.get(search_url).json()["items"]
+        response = "Resultados da pesquisa para '" + query + "': \n"
+        for result in results[:5]:
+            response += result["title"] + " - " + result["link"] + "\n"
+    except (requests.exceptions.RequestException, KeyError) as e:
+        response = "Desculpe, ocorreu um erro ao acessar a API do Google. Por favor, tente novamente mais tarde."
+
+    bot.send_message(chat_id=message.chat.id, text=response)
+
+
+
+
 @bot.message_handler(commands=['real'])
 def reais_message(message):
     bot.send_message(message.chat.id, 'O real não vale nada, é uma bosta essa moeda estatal de merda!')
@@ -115,6 +142,7 @@ def help_message(message):
     help_text += '/btc - Exibe a cotação do Bitcoin em dolares\n'
     help_text += '/xmr - Exibe a cotação do Monero em dolares\n'
     help_text += '/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...'
+    help_text += '/search - Exibe resultados de busca no Google'
     bot.send_message(message.chat.id, help_text)
 
 @bot.message_handler(commands=['add'])
