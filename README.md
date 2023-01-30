@@ -10,7 +10,7 @@ git clone https://github.com/area31/telegram-bot-xingamentos.git
 ## Install deps:
 
 ```bash
-pip3 install pyTelegramBotAPI --user
+pip3 install -r requirements.txt
 ```
 
 ## Usage
