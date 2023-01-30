@@ -184,4 +184,25 @@ def random_message(message):
         else:
             bot.send_message(message.chat.id, frase_escolhida)
 
+
+@bot.message_handler(commands=['chatgpt'])
+def gpt_message(message):
+    import os
+    import openai
+    openai.organization = "org-al8MtPWedxzCXNeGZh8rDyqQ"
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+
+    bot.send_message(message.chat.id, 'Não há frases cadastradas.')
+    else:
+        frase_escolhida = random.choice(frases)[0]
+        if message.reply_to_message:
+            bot.reply_to(message.reply_to_message, "@{} {}".format(message.reply_to_message.from_user.username, frase_escolhida))
+        elif '@' in message.text:
+            username = message.text.split()[1][1:]
+            bot.send_message(message.chat.id, "@{} {}".format(username, frase_escolhida))
+        else:
+            bot.send_message(message.chat.id, frase_escolhida)
+
+
+
 bot.polling()
