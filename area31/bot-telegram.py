@@ -71,7 +71,7 @@ def bitcoin_price(message):
     response = requests.get(url)
     data = response.json()
     btc_usd = data['bitcoin']['usd']
-    bot.send_message(message.chat.id, f'Cotação atual do Bitcoin: ${btc_usd}')
+    bot.send_message(message.chat.id, f'Cotação atual do Bitcoin em dolar: ${btc_usd}')
 
 @bot.message_handler(commands=['xmr'])
 def handle_btc(message):
@@ -79,7 +79,7 @@ def handle_btc(message):
     response = requests.get(url)
     data = response.json()
     price = data['data']['priceUsd']
-    bot.send_message(message.chat.id, f'Cotação atual do Monero: ${price}')
+    bot.send_message(message.chat.id, f'Cotação atual do Monero em dolar: ${price}')
 
 @bot.message_handler(commands=['ajuda'])
 def help_message(message):
