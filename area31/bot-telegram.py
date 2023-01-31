@@ -52,12 +52,21 @@ config2.read('token-openai.cfg')
 openai_key = config2['DEFAULT']['API_KEY']
 openai.api_key = openai_key
 
-@bot.message_handler(func=lambda message: message.text is not None and bot.get_me().username in message.text)
-def respond_to_mentions(message):
+# Chat GPT
+@bot.message_handler(func=lambda message: message.text is not None and (bot.get_me().username in message.text or message.reply_to_message is not None))
+def respond(message):
+    if message.reply_to_message is not None and message.reply_to_message.from_user.username == bot.get_me().username:
+        #prompt = "Responda a seguinte pergunta: " + message.reply_to_message.text
+        prompt="Responda a seguinte pergunta: " + message.text.replace("@" + bot.get_me().username, ""),
+    elif bot.get_me().username in message.text:
+        prompt="Responda a seguinte pergunta: " + message.text.replace("@" + bot.get_me().username, ""),
+    else:
+        return
+
     try:
         response = openai.Completion.create(
             engine="text-davinci-002",
-            prompt="Responda a seguinte pergunta: " + message.text.replace("@" + bot.get_me().username, ""),
+            prompt=prompt,
             max_tokens=1024,
             n=1,
             stop=None,
@@ -67,6 +76,7 @@ def respond_to_mentions(message):
         response = "Desculpe, ocorreu um erro ao me conectar à API do OpenAI. Por favor, tente novamente mais tarde."
 
     bot.send_message(chat_id=message.chat.id, text=response)
+
 
 # Adiciona o comando de busca no YouTube
 @bot.message_handler(commands=['youtube'])
