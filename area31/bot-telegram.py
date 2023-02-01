@@ -52,6 +52,27 @@ config2.read('token-openai.cfg')
 openai_key = config2['DEFAULT']['API_KEY']
 openai.api_key = openai_key
 
+# xingamentos
+@bot.message_handler(commands=['xinga'])
+def random_message(message):
+    conn = sqlite3.connect('frases.db')
+    c = conn.cursor()
+    c.execute("SELECT frase FROM frases")
+    frases = c.fetchall()
+    conn.close()
+    if not frases:
+        bot.send_message(message.chat.id, 'Não há frases cadastradas.')
+    else:
+        frase_escolhida = random.choice(frases)[0]
+        if message.reply_to_message:
+            bot.reply_to(message.reply_to_message, "@{} {}".format(message.reply_to_message.from_user.username, frase_escolhida))
+        elif len(message.text.split()) > 1 and message.text.split()[1].startswith('@'):
+            username = message.text.split()[1][1:]
+            bot.send_message(message.chat.id, "@{} {}".format(username, frase_escolhida))
+        else:
+            bot.send_message(message.chat.id, frase_escolhida)
+
+
 # Chat GPT
 @bot.message_handler(func=lambda message: message.text is not None and (bot.get_me().username in message.text or message.reply_to_message is not None))
 def respond(message):
@@ -254,24 +275,5 @@ def remover_message(message):
     conn.commit()
     conn.close()
     bot.send_message(message.chat.id, 'Xingamento removido com sucesso!')
-
-@bot.message_handler(commands=['xinga'])
-def random_message(message):
-    conn = sqlite3.connect('frases.db')
-    c = conn.cursor()
-    c.execute("SELECT frase FROM frases")
-    frases = c.fetchall()
-    conn.close()
-    if not frases:
-        bot.send_message(message.chat.id, 'Não há frases cadastradas.')
-    else:
-        frase_escolhida = random.choice(frases)[0]
-        if message.reply_to_message:
-            bot.reply_to(message.reply_to_message, "@{} {}".format(message.reply_to_message.from_user.username, frase_escolhida))
-        elif '@' in message.text:
-            username = message.text.split()[1][1:]
-            bot.send_message(message.chat.id, "@{} {}".format(username, frase_escolhida))
-        else:
-            bot.send_message(message.chat.id, frase_escolhida)
 
 bot.polling()
