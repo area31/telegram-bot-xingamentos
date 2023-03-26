@@ -77,18 +77,22 @@ def random_message(message):
 @bot.message_handler(func=lambda message: message.text is not None and (bot.get_me().username in message.text or message.reply_to_message is not None))
 def respond(message):
     if message.reply_to_message is not None and message.reply_to_message.from_user.username == bot.get_me().username:
-        content = message.text.replace("@" + bot.get_me().username, "")
+        #prompt = "Responda a seguinte pergunta: " + message.reply_to_message.text
+        prompt="Responda a seguinte pergunta: " + message.text.replace("@" + bot.get_me().username, ""),
     elif bot.get_me().username in message.text:
-        content = message.text.replace("@" + bot.get_me().username, "")
+        prompt="Responda a seguinte pergunta: " + message.text.replace("@" + bot.get_me().username, ""),
     else:
         return
 
     try:
-        completion = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": content}]
-        )
-        response = completion.choices[0].message['content']
+        response = openai.Completion.create(
+            engine="text-davinci-002",
+            prompt=prompt,
+            max_tokens=1024,
+            n=1,
+            stop=None,
+            temperature=0.9,
+        ).choices[0].text
     except (openai.OpenAIError, requests.exceptions.RequestException) as e:
         response = "Desculpe, ocorreu um erro ao me conectar à API do OpenAI. Por favor, tente novamente mais tarde."
 
