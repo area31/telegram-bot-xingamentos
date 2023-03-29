@@ -176,18 +176,18 @@ def dolar_message(message):
 
 @bot.message_handler(commands=['btc'])
 def bitcoin_price(message):
-    url = 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd'
+    url = "https://api.coincap.io/v2/assets/bitcoin"
     response = requests.get(url)
     data = response.json()
-    btc_usd = data['bitcoin']['usd']
-    bot.send_message(message.chat.id, f'Cotação atual do Bitcoin em dolar: ${btc_usd}')
+    price = round(float(data['data']['priceUsd']), 2)
+    bot.send_message(message.chat.id, f'Cotação atual do Bitcoin em dolar: ${price}')
 
 @bot.message_handler(commands=['xmr'])
 def handle_btc(message):
     url = "https://api.coincap.io/v2/assets/monero"
     response = requests.get(url)
     data = response.json()
-    price = data['data']['priceUsd']
+    price = round(float(data['data']['priceUsd']), 2)
     bot.send_message(message.chat.id, f'Cotação atual do Monero em dolar: ${price}')
 
 @bot.message_handler(commands=['ajuda'])
