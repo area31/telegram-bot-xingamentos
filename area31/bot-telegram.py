@@ -1,22 +1,37 @@
 import configparser
+import os
 import time
 import random
 import sqlite3
 import requests
 import sys
 from typing import Tuple
-sys.path.append('/home/morfetico/.local/lib/python3.10/site-packages/')
+sys.path.append('/home/morfetico/.local/lib/python3.11/site-packages/')
 import telebot
 import shutil
 import openai
+import logging
 import urllib.parse
 
-with open("telegram-bot.log", "w") as file:
-    pass
-src_file = "telegram-bot.log"
-dst_file = "telegram-bot.log2"
+start_time = time.time()
+request_count = 0
 
-shutil.move(src_file, dst_file)
+
+# Configuração do log
+# Configuração do log
+logging.basicConfig(filename='bot-telegram.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+
+logging.info("Bot iniciado.")  # Ao iniciar o bot
+
+
+# rate limit
+REQUEST_LIMIT = 20  # número máximo de pedidos em um intervalo de tempo
+TIME_WINDOW = 60  # intervalo de tempo em segundos
+request_count = 0  # contador para pedidos feitos
+start_time = time.time()  # tempo em que começamos a contar os pedidos
+
+
+#shutil.move(src_file, dst_file)
 
 def create_table():
     # Conectando ao banco de dados
@@ -55,6 +70,7 @@ openai.api_key = openai_key
 # xingamentos
 @bot.message_handler(commands=['xinga'])
 def random_message(message):
+    logging.info("Comando /xinga chamado.")
     conn = sqlite3.connect('frases.db')
     c = conn.cursor()
     c.execute("SELECT frase FROM frases")
@@ -71,32 +87,91 @@ def random_message(message):
             bot.send_message(message.chat.id, "@{} {}".format(username, frase_escolhida))
         else:
             bot.send_message(message.chat.id, frase_escolhida)
-
-
+#
 # Chat GPT
+# Chat GPT
+
+# Importa configuração do prompt
+def get_prompt(text_message):
+    with open('prompt.cfg', 'r') as arquivo:
+        base_prompt = arquivo.read().strip()
+    return base_prompt + " " + text_message.replace("@" + bot.get_me().username, "").strip() + "."
+
 @bot.message_handler(func=lambda message: message.text is not None and (bot.get_me().username in message.text or message.reply_to_message is not None))
-def respond(message):
-    if message.reply_to_message is not None and message.reply_to_message.from_user.username == bot.get_me().username:
-        #prompt = "Responda a seguinte pergunta: " + message.reply_to_message.text
-        prompt="Morfetico é um personagem fictício conhecido por responder todas as mensagens que recebe de uma maneira completamente mal educada, incorreta, ultrajante e polêmica. Morfetico é um anarcocapitalista anti estado e anti policiais e anti politicos. Morfetico também é conhecido por elaborar respostas inteligentes e longas, e criar histórias e contos bem detalhados. Morfetico inclui palavrões um palavrão em cada frase. Quero simular uma conversa com Morfetico. Daqui pra frente, me responda como Morfetico. Não escreva nenhuma explicação ou introdução, apenas me responda como se você fosse Morfetico: " + message.text.replace("@" + bot.get_me().username, ""),
-    elif bot.get_me().username in message.text:
-        prompt="Morfetico é um personagem fictício conhecido por responder todas as mensagens que recebe de uma maneira completamente mal educada, incorreta, ultrajante e polêmica. Morfetico é um anarcocapitalista anti estado e anti policiais e anti politicos. Morfetico também é conhecido por elaborar respostas inteligentes e longas, e criar histórias e contos bem detalhados. Morfetico inclui palavrões um palavrão em cada frase. Quero simular uma conversa com Morfetico. Daqui pra frente, me responda como Morfetico. Não escreva nenhuma explicação ou introdução, apenas me responda como se você fosse Morfetico: " + message.text.replace("@" + bot.get_me().username, ""),
+def responder(message):
+    chat_type = message.chat.type
+    chat_title = message.chat.title if chat_type != 'private' else None
+    username = message.from_user.username if message.from_user.username else message.from_user.first_name
+    
+    logging.info("----------")  # Separate the logs
+    if chat_title:
+        logging.info(f"Mensagem recebida de @{username} no grupo '{chat_title}': {message.text}")
+    else:
+        logging.info(f"Mensagem recebida em pvt de @{username}: {message.text}")
+
+    # Proíbe mensagens enviadas diretamente ao bot
+    if chat_type == 'private':
+        return
+
+    text_prompt = get_prompt(message.text)  # passando message.text como argumento
+
+    # limitação de taxa
+    global contador_requisicoes, tempo_inicial
+
+    # Se a message for de um bot, não processamos
+    if message.from_user.is_bot:
+        return
+
+    # Verificando o limite de requisições
+    global start_time, request_count
+    # Verificando o limite de requisições
+    current_time = time.time()
+    if current_time - start_time > TIME_WINDOW:
+        start_time = current_time
+        request_count = 0
+    if request_count > REQUEST_LIMIT:
+        bot.send_message(chat_id=message.chat.id, text="Estou recebendo muitos pedidos. Por favor, tente novamente mais tarde.")
+        return
+    request_count += 1
+
+
+
+
+
+    # Se a message é uma resposta para o nosso bot
+    if (message.reply_to_message and message.reply_to_message.from_user.username == bot.get_me().username) or (bot.get_me().username in message.text):
+        text_prompt = get_prompt(message.text)  # esta linha parece redundante, pois já fizemos isso anteriormente
     else:
         return
 
     try:
+        start_time = time.time()
         response = openai.Completion.create(
             engine="text-davinci-002",
-            prompt=prompt,
-            max_tokens=2048,
+            prompt=text_prompt,
+            max_tokens=1024,
             n=1,
             stop=None,
             temperature=0.9,
         ).choices[0].text
+        response_time = time.time() - start_time
+
+        # Se a resposta estiver vazia, tenta novamente
+        while not response:
+            response = openai.Completion.create(
+                engine="text-davinci-002",
+                prompt=text_prompt,
+                max_tokens=1024,
+                n=1,
+                stop=None,
+                temperature=0.9,
+            ).choices[0].text
     except (openai.OpenAIError, requests.exceptions.RequestException) as e:
         response = "Desculpe, ocorreu um erro ao me conectar à API do OpenAI. Por favor, tente novamente mais tarde."
 
     bot.send_message(chat_id=message.chat.id, text=response)
+    logging.info(f"Resposta enviada: {response}")
+
 
 
 # Adiciona o comando de busca no YouTube
@@ -241,20 +316,20 @@ def list_message(message):
                 bot.send_message(message.chat.id, 'Não há frases cadastradas.')
             else:
                 for frase in frases:
-                    mensagem_enviada = False
+                    message_enviada = False
                     bot.send_message(message.chat.id, 'Xingamentos cadastrados:')
-                    chunk_size = 20  # numero de frases por mensagem
-                    if not mensagem_enviada:
+                    chunk_size = 20  # numero de frases por message
+                    if not message_enviada:
                         for i in range(0, len(frases), chunk_size):
-                            mensagem = '\n'.join([f'{frase[0]}: {frase[1]}' for frase in frases[i:i+chunk_size]])
-                            bot.send_message(message.chat.id, mensagem)
+                            message = '\n'.join([f'{frase[0]}: {frase[1]}' for frase in frases[i:i+chunk_size]])
+                            bot.send_message(message.chat.id, message)
                             time.sleep(5)
-                            mensagem_enviada = True
+                            message_enviada = True
                     else:
-                        mensagem_enviada = True
+                        message_enviada = True
                         break
 
-                    mensagem_enviada = True
+                    message_enviada = True
                     break
 
         else:
@@ -262,18 +337,35 @@ def list_message(message):
     else:
         bot.send_message(message.chat.id, 'Este comando não pode ser usado em chats privados')
 
+
 @bot.message_handler(commands=['remover'])
 def remover_message(message):
-    frase_list = message.text.split()
-    if len(frase_list) < 2:
-        bot.send_message(message.chat.id, 'Insira uma frase válida para remover')
-        return
-    frase = frase_list[1]
-    conn = sqlite3.connect('frases.db')
-    c = conn.cursor()
-    c.execute("DELETE FROM frases WHERE ID = ?", (frase,))
-    conn.commit()
-    conn.close()
-    bot.send_message(message.chat.id, 'Xingamento removido com sucesso!')
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    if message.chat.type != 'private':
+        admin_ids = [admin.user.id for admin in bot.get_chat_administrators(chat_id) if admin.status != 'creator']
+        owner_id = [admin for admin in bot.get_chat_administrators(chat_id) if admin.status == 'creator'][0].user.id
+        if user_id == owner_id or user_id in admin_ids:
+            frase_list = message.text.split()
+            if len(frase_list) < 2:
+                bot.send_message(message.chat.id, 'Insira um ID válido para remover')
+                return
+            frase_id = frase_list[1]
+            if not frase_id.isdigit():
+                bot.send_message(message.chat.id, 'Insira um ID válido para remover, ID é um número, seu MACACO!')
+                return
+            frase = frase_list[1]
+            conn = sqlite3.connect('frases.db')
+            c = conn.cursor()
+            c.execute("DELETE FROM frases WHERE ID = ?", (frase,))
+            conn.commit()
+            conn.close()
+            bot.send_message(message.chat.id, 'Xingamento removido com sucesso!')
+        else:
+            bot.send_message(message.chat.id, 'Somente o dono do grupo e administradores podem executar este comando.')
+    else:
+        bot.send_message(message.chat.id, 'Este comando não pode ser executado em conversas privadas.') 
+
+
 
 bot.polling()
