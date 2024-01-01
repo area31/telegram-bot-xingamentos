@@ -6,7 +6,9 @@ import sqlite3
 import requests
 import sys
 from typing import Tuple
-sys.path.append('/home/morfetico/.local/lib/python3.11/site-packages/')
+# opcional
+#sys.path.append('/home/morfetico/.local/lib/python3.11/site-packages/')
+#
 import telebot
 import shutil
 import openai
@@ -115,6 +117,23 @@ def responder(message):
 
     text_prompt = get_prompt(message.text)  # passando message.text como argumento
 
+    # Verifica se a mensagem é uma resposta a outra mensagem
+    if message.reply_to_message:
+        # Mensagem original (a que foi respondida)
+        original_msg_text = message.reply_to_message.text
+
+        # Mensagem de resposta (a atual)
+        reply_msg_text = message.text
+
+        # Combina as duas mensagens para análise
+        combined_text = f"Mensagem Original: {original_msg_text}\nResposta: {reply_msg_text}"
+
+        # Atualiza o prompt para usar o texto combinado
+        text_prompt = get_prompt(combined_text)
+    else:
+        # Se não for uma resposta, usa o texto da mensagem como está
+        text_prompt = get_prompt(message.text)
+
     # limitação de taxa
     global contador_requisicoes, tempo_inicial
 
@@ -134,13 +153,9 @@ def responder(message):
         return
     request_count += 1
 
-
-
-
-
     # Se a message é uma resposta para o nosso bot
     if (message.reply_to_message and message.reply_to_message.from_user.username == bot.get_me().username) or (bot.get_me().username in message.text):
-        text_prompt = get_prompt(message.text)  # esta linha parece redundante, pois já fizemos isso anteriormente
+        text_prompt = get_prompt(message.text) 
     else:
         return
 
@@ -169,8 +184,11 @@ def responder(message):
     except (openai.OpenAIError, requests.exceptions.RequestException) as e:
         response = "Desculpe, ocorreu um erro ao me conectar à API do OpenAI. Por favor, tente novamente mais tarde."
 
-    bot.send_message(chat_id=message.chat.id, text=response)
-    logging.info(f"Resposta enviada: {response}")
+    # Envio da resposta
+    if message.reply_to_message:
+        bot.reply_to(message.reply_to_message, response)
+    else:
+        bot.send_message(chat_id=message.chat.id, text=response)
 
 
 
@@ -365,7 +383,5 @@ def remover_message(message):
             bot.send_message(message.chat.id, 'Somente o dono do grupo e administradores podem executar este comando.')
     else:
         bot.send_message(message.chat.id, 'Este comando não pode ser executado em conversas privadas.') 
-
-
 
 bot.polling()
