@@ -5,38 +5,33 @@ import random
 import sqlite3
 import requests
 import sys
-from typing import Tuple
-# opcional
-#sys.path.append('/home/morfetico/.local/lib/python3.11/site-packages/')
-#
+from typing import Tuple, Optional
+sys.path.append('/home/morfetico/.local/lib/python3.11/site-packages/')
 import telebot
 import shutil
 import openai
+from openai import OpenAIError
 import logging
 import urllib.parse
 
 start_time = time.time()
 request_count = 0
 
-
-# Configuração do log
 # Configuração do log
 logging.basicConfig(filename='bot-telegram.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+logging.info("Bot iniciado.")
 
-logging.info("Bot iniciado.")  # Ao iniciar o bot
-
-
-# rate limit
+# Rate limit
 REQUEST_LIMIT = 20  # número máximo de pedidos em um intervalo de tempo
-TIME_WINDOW = 60  # intervalo de tempo em segundos
-request_count = 0  # contador para pedidos feitos
+TIME_WINDOW = 60    # intervalo de tempo em segundos
+request_count = 0   # contador para pedidos feitos
 start_time = time.time()  # tempo em que começamos a contar os pedidos
 
-
-#shutil.move(src_file, dst_file)
+# Armazenamento em memória para informações por usuário e histórico de mensagens
+stored_info = {}  # Dicionário: {user_id: [lista de infos]}
+chat_memory = {}  # Dicionário: {chat_id: [lista de últimas 10 mensagens]}
 
 def create_table():
-    # Conectando ao banco de dados
     with sqlite3.connect('frases.db') as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -46,12 +41,12 @@ def create_table():
         );
         """)
 
-def insert_frase(frase:str):
+def insert_frase(frase: str):
     with sqlite3.connect('frases.db') as conn:
         cursor = conn.cursor()
         cursor.execute("INSERT INTO frases (frase) VALUES (?)", (frase,))
 
-def get_random_frase()->str:
+def get_random_frase() -> str:
     with sqlite3.connect('frases.db') as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT frase FROM frases ORDER BY RANDOM() LIMIT 1")
@@ -59,17 +54,30 @@ def get_random_frase()->str:
 
 create_table()
 
+# Configuração do Telegram
 config1 = configparser.ConfigParser()
 config1.read('token-telegram.cfg')
 TOKEN = config1['DEFAULT']['TOKEN']
 bot = telebot.TeleBot(TOKEN)
 
+# Configuração da OpenAI
 config2 = configparser.ConfigParser()
 config2.read('token-openai.cfg')
-openai_key = config2['DEFAULT']['API_KEY']
-openai.api_key = openai_key
+openai.api_key = config2['DEFAULT']['API_KEY']
 
-# xingamentos
+# Parâmetros da OpenAI
+MAX_TOKENS = 500
+TEMPERATURE = 0.8  # Para respostas mais naturais
+MODEL = "gpt-4"  # Alterar para "gpt-3.5-turbo" se não tiver acesso ao GPT-4
+
+# Função para contar tokens aproximadamente (simplificada)
+def count_tokens(messages):
+    total_tokens = 0
+    for msg in messages:
+        total_tokens += len(msg["content"].split()) + 10  # Aproximação: palavras + overhead
+    return total_tokens
+
+# Xingamentos
 @bot.message_handler(commands=['xinga'])
 def random_message(message):
     logging.info("Comando /xinga chamado.")
@@ -78,130 +86,204 @@ def random_message(message):
     c.execute("SELECT frase FROM frases")
     frases = c.fetchall()
     conn.close()
+
     if not frases:
         bot.send_message(message.chat.id, 'Não há frases cadastradas.')
+        return
+
+    frase_escolhida = random.choice(frases)[0]
+
+    if message.reply_to_message and hasattr(message.reply_to_message, 'from_user'):
+        bot.reply_to(message.reply_to_message, frase_escolhida)
+        logging.info(f"Comando /xinga chamado por @{message.from_user.username} como reply. Resposta: {frase_escolhida}")
     else:
-        frase_escolhida = random.choice(frases)[0]
-        if message.reply_to_message:
-            bot.reply_to(message.reply_to_message, "@{} {}".format(message.reply_to_message.from_user.username, frase_escolhida))
-        elif len(message.text.split()) > 1 and message.text.split()[1].startswith('@'):
-            username = message.text.split()[1][1:]
-            bot.send_message(message.chat.id, "@{} {}".format(username, frase_escolhida))
+        command_parts = message.text.split(maxsplit=2)
+        if len(command_parts) > 1 and command_parts[1].startswith('@'):
+            resposta = "{} {}".format(command_parts[1], frase_escolhida)
         else:
-            bot.send_message(message.chat.id, frase_escolhida)
-#
-# Chat GPT
-# Chat GPT
+            resposta = frase_escolhida
 
-# Importa configuração do prompt
-def get_prompt(text_message):
-    with open('prompt.cfg', 'r') as arquivo:
-        base_prompt = arquivo.read().strip()
-    return base_prompt + " " + text_message.replace("@" + bot.get_me().username, "").strip() + "."
+        bot.send_message(message.chat.id, resposta)
+        logging.info(f"Comando /xinga chamado por @{message.from_user.username}. Resposta: {resposta}")
 
-@bot.message_handler(func=lambda message: message.text is not None and (bot.get_me().username in message.text or message.reply_to_message is not None))
-def responder(message):
-    chat_type = message.chat.type
-    chat_title = message.chat.title if chat_type != 'private' else None
-    username = message.from_user.username if message.from_user.username else message.from_user.first_name
+# ChatGPT - Funções Auxiliares
+def get_prompt() -> str:
+    """Carrega o prompt base"""
+    try:
+        with open('prompt.cfg', 'r', encoding='utf-8') as arquivo:
+            return arquivo.read().strip()
+    except FileNotFoundError:
+        return ("Você é um assistente útil e espirituoso em um bot do Telegram. "
+                "Responda de forma natural, como um amigo conversando, mantendo o contexto da conversa. "
+                "Quando o usuário pedir para 'armazenar a info', guarde a informação em uma lista associada ao ID do usuário. "
+                "Quando perguntado 'quais são as infos que te pedi pra armazenar?', responda com a lista de informações armazenadas.")
+
+def update_chat_memory(message):
+    """Atualiza o histórico de mensagens do chat"""
+    chat_id = message.chat.id
+    if chat_id not in chat_memory:
+        chat_memory[chat_id] = []
     
-    logging.info("----------")  # Separate the logs
-    if chat_title:
-        logging.info(f"Mensagem recebida de @{username} no grupo '{chat_title}': {message.text}")
-    else:
-        logging.info(f"Mensagem recebida em pvt de @{username}: {message.text}")
+    # Adiciona a mensagem ao histórico
+    role = "user" if message.from_user.id != bot.get_me().id else "assistant"
+    chat_memory[chat_id].append({"role": role, "content": message.text})
+    
+    # Mantém apenas as últimas 10 mensagens
+    if len(chat_memory[chat_id]) > 10:
+        chat_memory[chat_id] = chat_memory[chat_id][-10:]
 
-    # Proíbe mensagens enviadas diretamente ao bot
-    if chat_type == 'private':
-        return
+def get_chat_history(message, reply_limit: int = 4) -> list:
+    """Recupera o histórico da thread de replies ou usa memória do chat"""
+    chat_id = message.chat.id
+    history = []
 
-    text_prompt = get_prompt(message.text)  # passando message.text como argumento
-
-    # Verifica se a mensagem é uma resposta a outra mensagem
+    # Se for reply, pega até 'reply_limit' mensagens da thread
     if message.reply_to_message:
-        # Mensagem original (a que foi respondida)
-        original_msg_text = message.reply_to_message.text
-
-        # Mensagem de resposta (a atual)
-        reply_msg_text = message.text
-
-        # Combina as duas mensagens para análise
-        combined_text = f"Mensagem Original: {original_msg_text}\nResposta: {reply_msg_text}"
-
-        # Atualiza o prompt para usar o texto combinado
-        text_prompt = get_prompt(combined_text)
+        current_message = message
+        history.append({"role": "user", "content": current_message.text})
+        while current_message.reply_to_message and len(history) < reply_limit + 1:
+            previous_message = current_message.reply_to_message
+            role = "assistant" if previous_message.from_user.id == bot.get_me().id else "user"
+            history.append({"role": role, "content": previous_message.text})
+            current_message = previous_message
+        history.reverse()
     else:
-        # Se não for uma resposta, usa o texto da mensagem como está
-        text_prompt = get_prompt(message.text)
+        # Se não for reply, usa o histórico completo do chat (últimas 10 mensagens)
+        if chat_id in chat_memory:
+            history = chat_memory[chat_id].copy()
 
-    # limitação de taxa
-    global contador_requisicoes, tempo_inicial
+    # Garante que o histórico não ultrapasse o limite de tokens
+    token_count = count_tokens(history)
+    while token_count > MAX_TOKENS * 0.7:  # Usa 70% do limite para sobrar espaço para a resposta
+        history.pop(0)  # Remove a mensagem mais antiga
+        token_count = count_tokens(history)
 
-    # Se a message for de um bot, não processamos
-    if message.from_user.is_bot:
+    return history
+
+def clear_stored_info(user_id):
+    """Limpa todas as informações armazenadas para um usuário"""
+    if user_id in stored_info:
+        del stored_info[user_id]
+        logging.info(f"Informações armazenadas limpas para user_id {user_id}")
+
+@bot.message_handler(func=lambda message: message.text is not None and
+                    message.from_user.id != bot.get_me().id and  # Ignora mensagens do próprio bot
+                    (bot.get_me().username in message.text or
+                     (message.reply_to_message is not None and
+                      message.reply_to_message.from_user.id == bot.get_me().id)))
+def responder(message):
+    """Handler principal para respostas do ChatGPT"""
+    global start_time, request_count
+
+    # Verificações iniciais
+    if message.chat.type == 'private' or message.from_user.is_bot:
         return
 
-    # Verificando o limite de requisições
-    global start_time, request_count
-    # Verificando o limite de requisições
+    # Rate limiting
     current_time = time.time()
     if current_time - start_time > TIME_WINDOW:
         start_time = current_time
         request_count = 0
-    if request_count > REQUEST_LIMIT:
-        bot.send_message(chat_id=message.chat.id, text="Estou recebendo muitos pedidos. Por favor, tente novamente mais tarde.")
+    if request_count >= REQUEST_LIMIT:
+        bot.send_message(message.chat.id, "Tô de boa, mas muito requisitado agora! Tenta de novo em uns segundos.")
         return
     request_count += 1
 
-    # Se a message é uma resposta para o nosso bot
-    if (message.reply_to_message and message.reply_to_message.from_user.username == bot.get_me().username) or (bot.get_me().username in message.text):
-        text_prompt = get_prompt(message.text) 
-    else:
+    # Atualiza a memória do chat com a mensagem atual
+    update_chat_memory(message)
+
+    # Construção do contexto
+    chat_history = get_chat_history(message, reply_limit=4)  # 4 mensagens para replies
+    system_prompt = get_prompt()
+    user_id = message.from_user.id
+
+    # Verifica comandos específicos antes de passar para a OpenAI
+    text_lower = message.text.lower()
+
+    # Armazenar info
+    if "armazene" in text_lower and ("info" in text_lower or "armazene" in text_lower.split()):
+        try:
+            info = message.text.split("armazene", 1)[1].replace("a info:", "").strip()
+            if not info:
+                bot.reply_to(message, "Opa, amigo! Armazenar o quê? Me dá algo pra guardar!")
+                return
+            if user_id not in stored_info:
+                stored_info[user_id] = []
+            stored_info[user_id].append(info)
+            logging.info(f"Info armazenada para user_id {user_id}: {info}")
+            bot.reply_to(message, "Beleza, guardei a info pra você!")
+            return
+        except IndexError:
+            bot.reply_to(message, "Opa, amigo! Armazenar o quê? Me dá algo pra guardar!")
+            return
+
+    # Verificar infos armazenadas
+    if "quais são as infos que te pedi pra armazenar?" in text_lower or \
+       "me diga o que pedi pra armazenar" in text_lower:
+        if user_id in stored_info and stored_info[user_id]:
+            resposta = "Olha só o que você me pediu pra guardar:\n" + "\n".join(stored_info[user_id])
+        else:
+            resposta = "Você ainda não me passou nenhuma info pra guardar, amigo!"
+        bot.reply_to(message, resposta)
         return
+
+    # Limpar infos
+    if "limpe tudo que armazenou" in text_lower:
+        clear_stored_info(user_id)
+        bot.reply_to(message, "Feito, amigo! Tudo limpo, não guardei mais nada.")
+        return
+
+    # Adiciona as infos armazenadas ao prompt, se existirem
+    if user_id in stored_info:
+        system_prompt += f"\nInformações que esse usuário me pediu pra guardar: {', '.join(stored_info[user_id])}"
+
+    # Monta a lista de mensagens para a API
+    messages = [{"role": "system", "content": system_prompt}] + chat_history
 
     try:
         start_time = time.time()
-        response = openai.Completion.create(
-            engine="text-davinci-002",
-            prompt=text_prompt,
-            max_tokens=1024,
-            n=1,
-            stop=None,
-            temperature=0.9,
-        ).choices[0].text
+        response = openai.ChatCompletion.create(
+            model=MODEL,
+            messages=messages,
+            max_tokens=MAX_TOKENS,
+            temperature=TEMPERATURE,
+            top_p=0.9,
+            frequency_penalty=0.0,  # Para respostas mais naturais
+            presence_penalty=0.2    # Evita repetições
+        )
+
+        answer = response.choices[0].message['content'].strip()
         response_time = time.time() - start_time
+        logging.info(f"Resposta gerada em {response_time:.2f}s: {answer}")
 
-        # Se a resposta estiver vazia, tenta novamente
-        while not response:
-            response = openai.Completion.create(
-                engine="text-davinci-002",
-                prompt=text_prompt,
-                max_tokens=1024,
-                n=1,
-                stop=None,
-                temperature=0.9,
-            ).choices[0].text
-    except (openai.OpenAIError, requests.exceptions.RequestException) as e:
-        response = "Desculpe, ocorreu um erro ao me conectar à API do OpenAI. Por favor, tente novamente mais tarde."
+        if not answer or len(answer) < 3:
+            answer = "Poxa, me deu um branco agora... deixa eu pensar melhor!"
 
-    # Envio da resposta
-    if message.reply_to_message:
-        bot.reply_to(message.reply_to_message, response)
-    else:
-        bot.send_message(chat_id=message.chat.id, text=response)
+        # Adiciona a resposta do bot à memória
+        chat_memory[message.chat.id].append({"role": "assistant", "content": answer})
 
+        if message.reply_to_message:
+            bot.reply_to(message, answer)
+        else:
+            bot.send_message(message.chat.id, answer)
 
+    except OpenAIError as e:
+        error_msg = f"Erro na API da OpenAI: {str(e)}"
+        logging.error(error_msg)
+        bot.send_message(message.chat.id, "Ops, minha cabeça de IA deu tilt! Tenta de novo!")
+    except Exception as e:
+        logging.error(f"Erro inesperado: {str(e)}")
+        bot.send_message(message.chat.id, "Deu uma zica aqui, brother! Tenta depois!")
 
-# Adiciona o comando de busca no YouTube
+# Busca no YouTube
 @bot.message_handler(commands=['youtube'])
 def youtube_search_command(message):
     query = message.text.replace("/youtube", "").strip()
-
     if not query:
         bot.send_message(chat_id=message.chat.id, text="Por favor, execute o /youtube com algum termo de busca")
         return
 
-    API_KEY = open("token-google.cfg").read().strip() # API Key do Google
+    API_KEY = open("token-google.cfg").read().strip()
     search_url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&key={API_KEY}"
 
     try:
@@ -218,17 +300,16 @@ def youtube_search_command(message):
 
     bot.send_message(chat_id=message.chat.id, text=response)
 
-# Adiciona o comando de busca usando o Google
+# Busca no Google
 @bot.message_handler(commands=['search'])
 def search_command(message):
     query = message.text.replace("/search", "").strip()
-
     if not query:
         bot.send_message(chat_id=message.chat.id, text="Por favor, execute o /search com algum termo de busca")
         return
 
-    API_KEY = open("token-google.cfg").read().strip() # API Key do Google
-    SEARCH_ENGINE_ID = open("token-google-engine.cfg").read().strip() # API Key do Google
+    API_KEY = open("token-google.cfg").read().strip()
+    SEARCH_ENGINE_ID = open("token-google-engine.cfg").read().strip()
     search_url = f"https://www.googleapis.com/customsearch/v1?key={API_KEY}&cx={SEARCH_ENGINE_ID}&q={query}"
 
     try:
@@ -245,8 +326,7 @@ def search_command(message):
 
     bot.send_message(chat_id=message.chat.id, text=response)
 
-
-
+# Comandos de cotação
 @bot.message_handler(commands=['real'])
 def reais_message(message):
     bot.send_message(message.chat.id, 'O real não vale nada, é uma bosta essa moeda estatal de merda!')
@@ -283,6 +363,7 @@ def handle_btc(message):
     price = round(float(data['data']['priceUsd']), 2)
     bot.send_message(message.chat.id, f'Cotação atual do Monero em dolar: ${price}')
 
+# Comandos de ajuda e gerenciamento de frases
 @bot.message_handler(commands=['ajuda'])
 def help_message(message):
     help_text = 'Comandos disponíveis:\n'
@@ -317,7 +398,6 @@ def add_message(message):
     conn.close()
     bot.send_message(message.chat.id, 'Xingamento adicionado com sucesso! Seu zuero!')
 
-
 @bot.message_handler(commands=['list'])
 def list_message(message):
     chat_id = message.chat.id
@@ -336,7 +416,7 @@ def list_message(message):
                 for frase in frases:
                     message_enviada = False
                     bot.send_message(message.chat.id, 'Xingamentos cadastrados:')
-                    chunk_size = 20  # numero de frases por message
+                    chunk_size = 20
                     if not message_enviada:
                         for i in range(0, len(frases), chunk_size):
                             message = '\n'.join([f'{frase[0]}: {frase[1]}' for frase in frases[i:i+chunk_size]])
@@ -346,15 +426,12 @@ def list_message(message):
                     else:
                         message_enviada = True
                         break
-
                     message_enviada = True
                     break
-
         else:
             bot.send_message(message.chat.id, 'Apenas o administrador e o dono do grupo podem executar este comando')
     else:
         bot.send_message(message.chat.id, 'Este comando não pode ser usado em chats privados')
-
 
 @bot.message_handler(commands=['remover'])
 def remover_message(message):
@@ -382,6 +459,7 @@ def remover_message(message):
         else:
             bot.send_message(message.chat.id, 'Somente o dono do grupo e administradores podem executar este comando.')
     else:
-        bot.send_message(message.chat.id, 'Este comando não pode ser executado em conversas privadas.') 
+        bot.send_message(message.chat.id, 'Este comando não pode ser executado em conversas privadas.')
 
+# Inicia o bot
 bot.polling()
