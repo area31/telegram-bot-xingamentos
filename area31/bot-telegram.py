@@ -22,14 +22,14 @@ logging.basicConfig(filename='bot-telegram.log', level=logging.INFO, format='%(a
 logging.info("Bot iniciado.")
 
 # Rate limit
-REQUEST_LIMIT = 20  # número máximo de pedidos em um intervalo de tempo
-TIME_WINDOW = 60    # intervalo de tempo em segundos
-request_count = 0   # contador para pedidos feitos
-start_time = time.time()  # tempo em que começamos a contar os pedidos
+REQUEST_LIMIT = 20
+TIME_WINDOW = 60
+request_count = 0
+start_time = time.time()
 
-# Armazenamento em memória para informações por usuário e histórico de mensagens
-stored_info = {}  # Dicionário: {user_id: [lista de infos]}
-chat_memory = {}  # Dicionário: {chat_id: [lista de últimas 10 mensagens]}
+# Armazenamento em memória
+stored_info = {}
+chat_memory = {}
 
 def create_table():
     with sqlite3.connect('frases.db') as conn:
@@ -55,26 +55,37 @@ def get_random_frase() -> str:
 create_table()
 
 # Configuração do Telegram
-config1 = configparser.ConfigParser()
-config1.read('token-telegram.cfg')
-TOKEN = config1['DEFAULT']['TOKEN']
+config_telegram = configparser.ConfigParser()
+config_telegram.read('token-telegram.cfg')
+TOKEN = config_telegram['DEFAULT']['TOKEN']
 bot = telebot.TeleBot(TOKEN)
 
 # Configuração da OpenAI
-config2 = configparser.ConfigParser()
-config2.read('token-openai.cfg')
-openai.api_key = config2['DEFAULT']['API_KEY']
+config_openai = configparser.ConfigParser()
+config_openai.read('token-openai.cfg')
+OPENAI_API_KEY = config_openai['DEFAULT']['API_KEY']
 
-# Parâmetros da OpenAI
+# Configuração da xAI
+config_xai = configparser.ConfigParser()
+config_xai.read('token-xai.cfg')
+XAI_API_KEY = config_xai['DEFAULT']['API_KEY']
+
+# Configuração do Bot (OpenAI ou xAI)
+config_bot = configparser.ConfigParser()
+config_bot.read('bot-telegram.cfg')
+BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'openai')  # Default para OpenAI se não especificado
+
+# Parâmetros gerais
 MAX_TOKENS = 500
-TEMPERATURE = 0.8  # Para respostas mais naturais
-MODEL = "gpt-4"  # Alterar para "gpt-3.5-turbo" se não tiver acesso ao GPT-4
+TEMPERATURE = 0.8
+OPENAI_MODEL = "gpt-4"  # Ou "gpt-3.5-turbo"
+XAI_MODEL = "grok-2-latest"
 
-# Função para contar tokens aproximadamente (simplificada)
+# Função para contar tokens (simplificada)
 def count_tokens(messages):
     total_tokens = 0
     for msg in messages:
-        total_tokens += len(msg["content"].split()) + 10  # Aproximação: palavras + overhead
+        total_tokens += len(msg["content"].split()) + 10
     return total_tokens
 
 # Xingamentos
@@ -106,9 +117,8 @@ def random_message(message):
         bot.send_message(message.chat.id, resposta)
         logging.info(f"Comando /xinga chamado por @{message.from_user.username}. Resposta: {resposta}")
 
-# ChatGPT - Funções Auxiliares
+# ChatGPT/xAI - Funções Auxiliares
 def get_prompt() -> str:
-    """Carrega o prompt base"""
     try:
         with open('prompt.cfg', 'r', encoding='utf-8') as arquivo:
             return arquivo.read().strip()
@@ -119,25 +129,20 @@ def get_prompt() -> str:
                 "Quando perguntado 'quais são as infos que te pedi pra armazenar?', responda com a lista de informações armazenadas.")
 
 def update_chat_memory(message):
-    """Atualiza o histórico de mensagens do chat"""
     chat_id = message.chat.id
     if chat_id not in chat_memory:
         chat_memory[chat_id] = []
     
-    # Adiciona a mensagem ao histórico
     role = "user" if message.from_user.id != bot.get_me().id else "assistant"
     chat_memory[chat_id].append({"role": role, "content": message.text})
     
-    # Mantém apenas as últimas 10 mensagens
     if len(chat_memory[chat_id]) > 10:
         chat_memory[chat_id] = chat_memory[chat_id][-10:]
 
 def get_chat_history(message, reply_limit: int = 4) -> list:
-    """Recupera o histórico da thread de replies ou usa memória do chat"""
     chat_id = message.chat.id
     history = []
 
-    # Se for reply, pega até 'reply_limit' mensagens da thread
     if message.reply_to_message:
         current_message = message
         history.append({"role": "user", "content": current_message.text})
@@ -148,38 +153,32 @@ def get_chat_history(message, reply_limit: int = 4) -> list:
             current_message = previous_message
         history.reverse()
     else:
-        # Se não for reply, usa o histórico completo do chat (últimas 10 mensagens)
         if chat_id in chat_memory:
             history = chat_memory[chat_id].copy()
 
-    # Garante que o histórico não ultrapasse o limite de tokens
     token_count = count_tokens(history)
-    while token_count > MAX_TOKENS * 0.7:  # Usa 70% do limite para sobrar espaço para a resposta
-        history.pop(0)  # Remove a mensagem mais antiga
+    while token_count > MAX_TOKENS * 0.7:
+        history.pop(0)
         token_count = count_tokens(history)
 
     return history
 
 def clear_stored_info(user_id):
-    """Limpa todas as informações armazenadas para um usuário"""
     if user_id in stored_info:
         del stored_info[user_id]
         logging.info(f"Informações armazenadas limpas para user_id {user_id}")
 
 @bot.message_handler(func=lambda message: message.text is not None and
-                    message.from_user.id != bot.get_me().id and  # Ignora mensagens do próprio bot
+                    message.from_user.id != bot.get_me().id and
                     (bot.get_me().username in message.text or
                      (message.reply_to_message is not None and
                       message.reply_to_message.from_user.id == bot.get_me().id)))
 def responder(message):
-    """Handler principal para respostas do ChatGPT"""
     global start_time, request_count
 
-    # Verificações iniciais
     if message.chat.type == 'private' or message.from_user.is_bot:
         return
 
-    # Rate limiting
     current_time = time.time()
     if current_time - start_time > TIME_WINDOW:
         start_time = current_time
@@ -189,18 +188,13 @@ def responder(message):
         return
     request_count += 1
 
-    # Atualiza a memória do chat com a mensagem atual
     update_chat_memory(message)
-
-    # Construção do contexto
-    chat_history = get_chat_history(message, reply_limit=4)  # 4 mensagens para replies
+    chat_history = get_chat_history(message, reply_limit=4)
     system_prompt = get_prompt()
     user_id = message.from_user.id
 
-    # Verifica comandos específicos antes de passar para a OpenAI
     text_lower = message.text.lower()
 
-    # Armazenar info
     if "armazene" in text_lower and ("info" in text_lower or "armazene" in text_lower.split()):
         try:
             info = message.text.split("armazene", 1)[1].replace("a info:", "").strip()
@@ -217,7 +211,6 @@ def responder(message):
             bot.reply_to(message, "Opa, amigo! Armazenar o quê? Me dá algo pra guardar!")
             return
 
-    # Verificar infos armazenadas
     if "quais são as infos que te pedi pra armazenar?" in text_lower or \
        "me diga o que pedi pra armazenar" in text_lower:
         if user_id in stored_info and stored_info[user_id]:
@@ -227,39 +220,59 @@ def responder(message):
         bot.reply_to(message, resposta)
         return
 
-    # Limpar infos
     if "limpe tudo que armazenou" in text_lower:
         clear_stored_info(user_id)
         bot.reply_to(message, "Feito, amigo! Tudo limpo, não guardei mais nada.")
         return
 
-    # Adiciona as infos armazenadas ao prompt, se existirem
     if user_id in stored_info:
         system_prompt += f"\nInformações que esse usuário me pediu pra guardar: {', '.join(stored_info[user_id])}"
 
-    # Monta a lista de mensagens para a API
     messages = [{"role": "system", "content": system_prompt}] + chat_history
 
     try:
         start_time = time.time()
-        response = openai.ChatCompletion.create(
-            model=MODEL,
-            messages=messages,
-            max_tokens=MAX_TOKENS,
-            temperature=TEMPERATURE,
-            top_p=0.9,
-            frequency_penalty=0.0,  # Para respostas mais naturais
-            presence_penalty=0.2    # Evita repetições
-        )
 
-        answer = response.choices[0].message['content'].strip()
+        if BOT_AI.lower() == "openai":
+            # Configuração da OpenAI
+            openai.api_key = OPENAI_API_KEY
+            response = openai.ChatCompletion.create(
+                model=OPENAI_MODEL,
+                messages=messages,
+                max_tokens=MAX_TOKENS,
+                temperature=TEMPERATURE,
+                top_p=0.9,
+                frequency_penalty=0.0,
+                presence_penalty=0.2
+            )
+            answer = response.choices[0].message['content'].strip()
+
+        elif BOT_AI.lower() == "xai":
+            # Configuração da xAI
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {XAI_API_KEY}"
+            }
+            payload = {
+                "messages": messages,
+                "model": XAI_MODEL,
+                "stream": False,
+                "temperature": TEMPERATURE,
+                "max_tokens": MAX_TOKENS
+            }
+            response = requests.post("https://api.x.ai/v1/chat/completions", headers=headers, json=payload)
+            response.raise_for_status()
+            answer = response.json()["choices"][0]["message"]["content"].strip()
+
+        else:
+            raise ValueError(f"Configuração inválida para BOT_AI: {BOT_AI}. Use 'openai' ou 'xai'.")
+
         response_time = time.time() - start_time
-        logging.info(f"Resposta gerada em {response_time:.2f}s: {answer}")
+        logging.info(f"Resposta gerada em {response_time:.2f}s usando {BOT_AI}: {answer}")
 
         if not answer or len(answer) < 3:
             answer = "Poxa, me deu um branco agora... deixa eu pensar melhor!"
 
-        # Adiciona a resposta do bot à memória
         chat_memory[message.chat.id].append({"role": "assistant", "content": answer})
 
         if message.reply_to_message:
@@ -271,6 +284,10 @@ def responder(message):
         error_msg = f"Erro na API da OpenAI: {str(e)}"
         logging.error(error_msg)
         bot.send_message(message.chat.id, "Ops, minha cabeça de IA deu tilt! Tenta de novo!")
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Erro na API da xAI: {str(e)}"
+        logging.error(error_msg)
+        bot.send_message(message.chat.id, "Ops, deu problema com a xAI! Tenta de novo!")
     except Exception as e:
         logging.error(f"Erro inesperado: {str(e)}")
         bot.send_message(message.chat.id, "Deu uma zica aqui, brother! Tenta depois!")
@@ -460,6 +477,13 @@ def remover_message(message):
             bot.send_message(message.chat.id, 'Somente o dono do grupo e administradores podem executar este comando.')
     else:
         bot.send_message(message.chat.id, 'Este comando não pode ser executado em conversas privadas.')
+
+@bot.message_handler(func=lambda message: message.chat.type != 'private' and
+                    message.text is not None and
+                    "boa cabelo" in message.text.lower())
+def responder_boa_cabelo(message):
+    bot.reply_to(message, "vlw barba")
+    logging.info(f"Resposta 'vlw barba' enviada para '{message.text}' por @{message.from_user.username}")
 
 # Inicia o bot
 bot.polling()
