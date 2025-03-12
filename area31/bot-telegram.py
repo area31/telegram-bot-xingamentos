@@ -33,6 +33,9 @@ config_telegram.read('token-telegram.cfg')
 TOKEN = config_telegram['DEFAULT']['TOKEN']
 bot = telebot.TeleBot(TOKEN)
 
+# Limite de caracteres do Telegram
+TELEGRAM_MAX_CHARS = 4096
+
 # Ajustes de formatação do Telegram
 def escape_markdown_v2(text):
     """
@@ -42,18 +45,20 @@ def escape_markdown_v2(text):
     result = ""
     i = 0
     length = len(text)
+    code_block_open = False
 
     while i < length:
         if i + 2 < length and text[i:i+3] == "```":
             result += "```"
             i += 3
-            while i < length and text[i:i+3] != "```":
+            code_block_open = not code_block_open
+            while i < length and (not code_block_open or text[i:i+3] != "```"):
                 result += text[i]
                 i += 1
             if i + 2 < length:
                 result += "```"
                 i += 3
-        elif i + 1 < length and text[i:i+2] == "**":  # Convertendo ** para *
+        elif i + 1 < length and text[i:i+2] == "**":
             result += "*"
             i += 2
             while i < length and text[i:i+2] != "**":
@@ -74,7 +79,7 @@ def escape_markdown_v2(text):
             if i < length:
                 result += "`"
                 i += 1
-        elif text[i] == "*":  # Mantendo * como itálico ou negrito dependendo do contexto
+        elif text[i] == "*":
             result += "*"
             i += 1
             while i < length and text[i] != "*":
@@ -93,7 +98,17 @@ def escape_markdown_v2(text):
                 result += text[i]
             i += 1
 
+    # Se um bloco de código foi aberto e não fechado, adicionar o fechamento
+    if code_block_open and not result.endswith("```"):
+        result += "```"
+
+    # Truncar para o limite do Telegram, preservando o final do bloco de código
+    if len(result) > TELEGRAM_MAX_CHARS:
+        result = result[:TELEGRAM_MAX_CHARS - 3] + "..."
+        if code_block_open and not result.endswith("```"):
+            result += "```"
     return result
+
 
 # Armazenamento em memória
 stored_info = {}
@@ -139,7 +154,7 @@ config_bot.read('bot-telegram.cfg')
 BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'openai')  # Default para OpenAI se não especificado
 
 # Parâmetros gerais
-MAX_TOKENS = 500
+MAX_TOKENS = 1000  # Mantido para dar espaço, mas o prompt controlará o tamanho
 TEMPERATURE = 0.8
 OPENAI_MODEL = "gpt-4"  # Ou "gpt-3.5-turbo"
 XAI_MODEL = "grok-2-latest"
@@ -149,6 +164,19 @@ def count_tokens(messages):
     for msg in messages:
         total_tokens += len(msg["content"].split()) + 10
     return total_tokens
+
+# Prompt ajustado para limitar o tamanho da resposta
+def get_prompt() -> str:
+    try:
+        with open('prompt.cfg', 'r', encoding='utf-8') as arquivo:
+            base_prompt = arquivo.read().strip()
+    except FileNotFoundError:
+        base_prompt = ("Você é um assistente útil e espirituoso em um bot do Telegram. "
+                       "Responda de forma natural, como um amigo conversando, mantendo o contexto da conversa. "
+                       "Quando o usuário pedir para 'armazenar a info', guarde a informação em uma lista associada ao ID do usuário. "
+                       "Quando perguntado 'quais são as infos que te pedi pra armazenar?', responda com a lista de informações armazenadas.")
+    # Adicionar instrução de limite de caracteres
+    return f"{base_prompt}\n\nSua resposta deve ter no máximo 4000 caracteres para caber no limite do Telegram (4096 caracteres, incluindo formatação). Se necessário, resuma ou ajuste o conteúdo para não ultrapassar esse limite."
 
 # Comando de teste para negrito
 @bot.message_handler(commands=['testenegrito'])
@@ -187,16 +215,6 @@ def random_message(message):
         logging.info(f"Comando /xinga chamado por @{message.from_user.username}. Resposta: {resposta}")
 
 # ChatGPT/xAI - Funções Auxiliares
-def get_prompt() -> str:
-    try:
-        with open('prompt.cfg', 'r', encoding='utf-8') as arquivo:
-            return arquivo.read().strip()
-    except FileNotFoundError:
-        return ("Você é um assistente útil e espirituoso em um bot do Telegram. "
-                "Responda de forma natural, como um amigo conversando, mantendo o contexto da conversa. "
-                "Quando o usuário pedir para 'armazenar a info', guarde a informação em uma lista associada ao ID do usuário. "
-                "Quando perguntado 'quais são as infos que te pedi pra armazenar?', responda com a lista de informações armazenadas.")
-
 def update_chat_memory(message):
     chat_id = message.chat.id
     if chat_id not in chat_memory:
@@ -413,7 +431,7 @@ def search_command(message):
 # Comandos de cotação
 @bot.message_handler(commands=['real'])
 def reais_message(message):
-    bot.send_message(message.chat.id, 'O real não vale nada, é uma bosta essa moeda estatal de merda!')
+    bot.send_message(message.chat.id, 'O real não vale nada, é uma bosta essa moeda estado de merda!')
 
 @bot.message_handler(commands=['euro'])
 def euro_message(message):
