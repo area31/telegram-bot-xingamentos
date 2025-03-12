@@ -49,15 +49,13 @@ def escape_markdown_v2(text):
 
     while i < length:
         if i + 2 < length and text[i:i+3] == "```":
-            result += "```"
-            i += 3
-            code_block_open = not code_block_open
-            while i < length and (not code_block_open or text[i:i+3] != "```"):
-                result += text[i]
-                i += 1
-            if i + 2 < length:
+            if not code_block_open:
                 result += "```"
-                i += 3
+                code_block_open = True
+            else:
+                result += "```"
+                code_block_open = False
+            i += 3
         elif i + 1 < length and text[i:i+2] == "**":
             result += "*"
             i += 2
@@ -98,17 +96,16 @@ def escape_markdown_v2(text):
                 result += text[i]
             i += 1
 
-    # Se um bloco de código foi aberto e não fechado, adicionar o fechamento
+    # Fechar bloco de código se estiver aberto
     if code_block_open and not result.endswith("```"):
         result += "```"
 
-    # Truncar para o limite do Telegram, preservando o final do bloco de código
+    # Truncar para o limite do Telegram
     if len(result) > TELEGRAM_MAX_CHARS:
         result = result[:TELEGRAM_MAX_CHARS - 3] + "..."
         if code_block_open and not result.endswith("```"):
             result += "```"
     return result
-
 
 # Armazenamento em memória
 stored_info = {}
