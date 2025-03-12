@@ -6,7 +6,7 @@ import sqlite3
 import requests
 import sys
 from typing import Tuple, Optional
-sys.path.append('/home/morfetico/.local/lib/python3.11/site-packages/')
+sys.path.append('/home/morfetico/.local/lib/python3.12/site-packages/')
 import telebot
 import shutil
 import openai
@@ -26,6 +26,74 @@ REQUEST_LIMIT = 20
 TIME_WINDOW = 60
 request_count = 0
 start_time = time.time()
+
+# Configuração do Telegram
+config_telegram = configparser.ConfigParser()
+config_telegram.read('token-telegram.cfg')
+TOKEN = config_telegram['DEFAULT']['TOKEN']
+bot = telebot.TeleBot(TOKEN)
+
+# Ajustes de formatação do Telegram
+def escape_markdown_v2(text):
+    """
+    Escapa caracteres reservados para Telegram MarkdownV2, usando * para negrito e preservando `código` e ```bloco de código```.
+    """
+    reserved_chars = "_[]()~>#+-=|{}!."
+    result = ""
+    i = 0
+    length = len(text)
+
+    while i < length:
+        if i + 2 < length and text[i:i+3] == "```":
+            result += "```"
+            i += 3
+            while i < length and text[i:i+3] != "```":
+                result += text[i]
+                i += 1
+            if i + 2 < length:
+                result += "```"
+                i += 3
+        elif i + 1 < length and text[i:i+2] == "**":  # Convertendo ** para *
+            result += "*"
+            i += 2
+            while i < length and text[i:i+2] != "**":
+                if text[i] in reserved_chars:
+                    result += "\\" + text[i]
+                else:
+                    result += text[i]
+                i += 1
+            if i + 1 < length:
+                result += "*"
+                i += 2
+        elif text[i] == "`":
+            result += "`"
+            i += 1
+            while i < length and text[i] != "`":
+                result += text[i]
+                i += 1
+            if i < length:
+                result += "`"
+                i += 1
+        elif text[i] == "*":  # Mantendo * como itálico ou negrito dependendo do contexto
+            result += "*"
+            i += 1
+            while i < length and text[i] != "*":
+                if text[i] in reserved_chars:
+                    result += "\\" + text[i]
+                else:
+                    result += text[i]
+                i += 1
+            if i < length:
+                result += "*"
+                i += 1
+        else:
+            if text[i] in reserved_chars:
+                result += "\\" + text[i]
+            else:
+                result += text[i]
+            i += 1
+
+    return result
 
 # Armazenamento em memória
 stored_info = {}
@@ -50,15 +118,10 @@ def get_random_frase() -> str:
     with sqlite3.connect('frases.db') as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT frase FROM frases ORDER BY RANDOM() LIMIT 1")
-        return cursor.fetchone()[0]
+        result = cursor.fetchone()
+        return result[0] if result else None
 
 create_table()
-
-# Configuração do Telegram
-config_telegram = configparser.ConfigParser()
-config_telegram.read('token-telegram.cfg')
-TOKEN = config_telegram['DEFAULT']['TOKEN']
-bot = telebot.TeleBot(TOKEN)
 
 # Configuração da OpenAI
 config_openai = configparser.ConfigParser()
@@ -81,12 +144,18 @@ TEMPERATURE = 0.8
 OPENAI_MODEL = "gpt-4"  # Ou "gpt-3.5-turbo"
 XAI_MODEL = "grok-2-latest"
 
-# Função para contar tokens (simplificada)
 def count_tokens(messages):
     total_tokens = 0
     for msg in messages:
         total_tokens += len(msg["content"].split()) + 10
     return total_tokens
+
+# Comando de teste para negrito
+@bot.message_handler(commands=['testenegrito'])
+def teste_negrito(message):
+    texto = "*Esse texto deve estar em negrito, amigo\.**\n\nEsse texto não deve estar em negrito, amigo\."
+    logging.info(f"Enviando texto de teste: {texto}")
+    bot.send_message(message.chat.id, texto, parse_mode='MarkdownV2')
 
 # Xingamentos
 @bot.message_handler(commands=['xinga'])
@@ -184,7 +253,7 @@ def responder(message):
         start_time = current_time
         request_count = 0
     if request_count >= REQUEST_LIMIT:
-        bot.send_message(message.chat.id, "Tô de boa, mas muito requisitado agora! Tenta de novo em uns segundos.")
+        bot.send_message(message.chat.id, escape_markdown_v2("Tô de boa, mas muito requisitado agora! Tenta de novo em uns segundos."), parse_mode='MarkdownV2')
         return
     request_count += 1
 
@@ -199,16 +268,16 @@ def responder(message):
         try:
             info = message.text.split("armazene", 1)[1].replace("a info:", "").strip()
             if not info:
-                bot.reply_to(message, "Opa, amigo! Armazenar o quê? Me dá algo pra guardar!")
+                bot.reply_to(message, escape_markdown_v2("Opa, amigo! Armazenar o quê? Me dá algo pra guardar!"), parse_mode='MarkdownV2')
                 return
             if user_id not in stored_info:
                 stored_info[user_id] = []
             stored_info[user_id].append(info)
             logging.info(f"Info armazenada para user_id {user_id}: {info}")
-            bot.reply_to(message, "Beleza, guardei a info pra você!")
+            bot.reply_to(message, escape_markdown_v2("Beleza, guardei a info pra você!"), parse_mode='MarkdownV2')
             return
         except IndexError:
-            bot.reply_to(message, "Opa, amigo! Armazenar o quê? Me dá algo pra guardar!")
+            bot.reply_to(message, escape_markdown_v2("Opa, amigo! Armazenar o quê? Me dá algo pra guardar!"), parse_mode='MarkdownV2')
             return
 
     if "quais são as infos que te pedi pra armazenar?" in text_lower or \
@@ -217,12 +286,12 @@ def responder(message):
             resposta = "Olha só o que você me pediu pra guardar:\n" + "\n".join(stored_info[user_id])
         else:
             resposta = "Você ainda não me passou nenhuma info pra guardar, amigo!"
-        bot.reply_to(message, resposta)
+        bot.reply_to(message, escape_markdown_v2(resposta), parse_mode='MarkdownV2')
         return
 
     if "limpe tudo que armazenou" in text_lower:
         clear_stored_info(user_id)
-        bot.reply_to(message, "Feito, amigo! Tudo limpo, não guardei mais nada.")
+        bot.reply_to(message, escape_markdown_v2("Feito, amigo! Tudo limpo, não guardei mais nada."), parse_mode='MarkdownV2')
         return
 
     if user_id in stored_info:
@@ -234,7 +303,6 @@ def responder(message):
         start_time = time.time()
 
         if BOT_AI.lower() == "openai":
-            # Configuração da OpenAI
             openai.api_key = OPENAI_API_KEY
             response = openai.ChatCompletion.create(
                 model=OPENAI_MODEL,
@@ -246,9 +314,7 @@ def responder(message):
                 presence_penalty=0.2
             )
             answer = response.choices[0].message['content'].strip()
-
         elif BOT_AI.lower() == "xai":
-            # Configuração da xAI
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {XAI_API_KEY}"
@@ -263,7 +329,6 @@ def responder(message):
             response = requests.post("https://api.x.ai/v1/chat/completions", headers=headers, json=payload)
             response.raise_for_status()
             answer = response.json()["choices"][0]["message"]["content"].strip()
-
         else:
             raise ValueError(f"Configuração inválida para BOT_AI: {BOT_AI}. Use 'openai' ou 'xai'.")
 
@@ -274,23 +339,25 @@ def responder(message):
             answer = "Poxa, me deu um branco agora... deixa eu pensar melhor!"
 
         chat_memory[message.chat.id].append({"role": "assistant", "content": answer})
+        answer_escaped = escape_markdown_v2(answer)
+        logging.info(f"Texto escapado enviado ao Telegram: {answer_escaped}")
 
         if message.reply_to_message:
-            bot.reply_to(message, answer)
+            bot.reply_to(message, answer_escaped, parse_mode='MarkdownV2')
         else:
-            bot.send_message(message.chat.id, answer)
+            bot.send_message(message.chat.id, answer_escaped, parse_mode='MarkdownV2')
 
     except OpenAIError as e:
         error_msg = f"Erro na API da OpenAI: {str(e)}"
         logging.error(error_msg)
-        bot.send_message(message.chat.id, "Ops, minha cabeça de IA deu tilt! Tenta de novo!")
+        bot.send_message(message.chat.id, escape_markdown_v2("Ops, minha cabeça de IA deu tilt! Tenta de novo!"), parse_mode='MarkdownV2')
     except requests.exceptions.RequestException as e:
         error_msg = f"Erro na API da xAI: {str(e)}"
         logging.error(error_msg)
-        bot.send_message(message.chat.id, "Ops, deu problema com a xAI! Tenta de novo!")
+        bot.send_message(message.chat.id, escape_markdown_v2("Ops, deu problema com a xAI! Tenta de novo!"), parse_mode='MarkdownV2')
     except Exception as e:
         logging.error(f"Erro inesperado: {str(e)}")
-        bot.send_message(message.chat.id, "Deu uma zica aqui, brother! Tenta depois!")
+        bot.send_message(message.chat.id, escape_markdown_v2("Deu uma zica aqui, brother! Tenta depois!"), parse_mode='MarkdownV2')
 
 # Busca no YouTube
 @bot.message_handler(commands=['youtube'])
@@ -394,7 +461,8 @@ def help_message(message):
     help_text += '/xmr - Exibe a cotação do Monero em dolares\n'
     help_text += '/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...\n'
     help_text += '/youtube - Exibe resultados de busca de vídeos no Youtube\n'
-    help_text += '/search - Exibe resultados de busca no Google'
+    help_text += '/search - Exibe resultados de busca no Google\n'
+    help_text += '/testenegrito - Testa o envio de texto em negrito'
     bot.send_message(message.chat.id, help_text)
 
 @bot.message_handler(commands=['add'])
