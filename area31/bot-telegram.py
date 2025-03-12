@@ -39,66 +39,118 @@ TELEGRAM_MAX_CHARS = 4096
 # Ajustes de formatação do Telegram
 def escape_markdown_v2(text):
     """
-    Escapa caracteres reservados para Telegram MarkdownV2, usando * para negrito e preservando `código` e ```bloco de código```.
+    Escapa caracteres reservados para Telegram MarkdownV2, separando títulos de blocos de código.
     """
     reserved_chars = "_[]()~>#+-=|{}!."
     result = ""
     i = 0
     length = len(text)
     code_block_open = False
+    code_block_content = ""
+    pre_block_text = ""  # Para texto antes do bloco de código
 
     while i < length:
         if i + 2 < length and text[i:i+3] == "```":
             if not code_block_open:
-                result += "```"
                 code_block_open = True
+                i += 3
+                while i < length:
+                    if i + 2 < length and text[i:i+3] == "```":
+                        i += 3
+                        code_block_open = False
+                        result += pre_block_text.strip() + "\n```" + code_block_content.strip() + "```"
+                        pre_block_text = ""
+                        code_block_content = ""
+                        break
+                    code_block_content += text[i]
+                    i += 1
             else:
-                result += "```"
-                code_block_open = False
-            i += 3
+                i += 3  # Ignorar ``` extras
         elif i + 1 < length and text[i:i+2] == "**":
-            result += "*"
+            if code_block_open:
+                code_block_content += "**"
+            else:
+                result += "*"
             i += 2
             while i < length and text[i:i+2] != "**":
-                if text[i] in reserved_chars:
+                if text[i] in reserved_chars and not code_block_open:
                     result += "\\" + text[i]
+                elif code_block_open:
+                    code_block_content += text[i]
                 else:
                     result += text[i]
                 i += 1
             if i + 1 < length:
-                result += "*"
+                if code_block_open:
+                    code_block_content += "**"
+                else:
+                    result += "*"
                 i += 2
         elif text[i] == "`":
-            result += "`"
+            if code_block_open:
+                code_block_content += "`"
+            else:
+                result += "`"
             i += 1
             while i < length and text[i] != "`":
-                result += text[i]
-                i += 1
-            if i < length:
-                result += "`"
-                i += 1
-        elif text[i] == "*":
-            result += "*"
-            i += 1
-            while i < length and text[i] != "*":
-                if text[i] in reserved_chars:
-                    result += "\\" + text[i]
+                if code_block_open:
+                    code_block_content += text[i]
                 else:
                     result += text[i]
                 i += 1
             if i < length:
-                result += "*"
+                if code_block_open:
+                    code_block_content += "`"
+                else:
+                    result += "`"
                 i += 1
+        elif text[i] == "*":
+            if code_block_open:
+                code_block_content += "*"
+            else:
+                result += "*"
+            i += 1
+            while i < length and text[i] != "*":
+                if text[i] in reserved_chars and not code_block_open:
+                    result += "\\" + text[i]
+                elif code_block_open:
+                    code_block_content += text[i]
+                else:
+                    result += text[i]
+                i += 1
+            if i < length:
+                if code_block_open:
+                    code_block_content += "*"
+                else:
+                    result += "*"
+                i += 1
+        elif text[i] == ">":
+            if not code_block_open and (i == 0 or text[i-1] == "\n"):
+                result += ">"  # Preservar > como citação no início da linha
+            elif code_block_open:
+                code_block_content += ">"
+            else:
+                result += "\\>"
+            i += 1
         else:
-            if text[i] in reserved_chars:
+            if code_block_open:
+                code_block_content += text[i]
+            elif text[i] in reserved_chars:
                 result += "\\" + text[i]
             else:
-                result += text[i]
+                if code_block_open:
+                    pre_block_text += text[i]
+                else:
+                    result += text[i]
             i += 1
 
-    # Fechar bloco de código se estiver aberto
-    if code_block_open and not result.endswith("```"):
-        result += "```"
+    # Fechar bloco de código se ainda estiver aberto
+    if code_block_open:
+        result += pre_block_text.strip() + "\n```" + code_block_content.strip() + "```"
+
+    # Garantir que o resultado nunca seja vazio
+    if not result:
+        result = "Erro ao processar formatação, tente novamente."
 
     # Truncar para o limite do Telegram
     if len(result) > TELEGRAM_MAX_CHARS:
@@ -106,6 +158,7 @@ def escape_markdown_v2(text):
         if code_block_open and not result.endswith("```"):
             result += "```"
     return result
+
 
 # Armazenamento em memória
 stored_info = {}
