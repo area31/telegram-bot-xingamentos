@@ -39,7 +39,7 @@ TELEGRAM_MAX_CHARS = 4096
 # Ajustes de formatação do Telegram
 def escape_markdown_v2(text):
     """
-    Escapa caracteres reservados para Telegram MarkdownV2, separando títulos de blocos de código.
+    Escapa caracteres reservados para Telegram MarkdownV2, preservando sequências de escape em blocos de código.
     """
     reserved_chars = "_[]()~>#+-=|{}!."
     result = ""
@@ -47,30 +47,40 @@ def escape_markdown_v2(text):
     length = len(text)
     code_block_open = False
     code_block_content = ""
-    pre_block_text = ""  # Para texto antes do bloco de código
 
     while i < length:
         if i + 2 < length and text[i:i+3] == "```":
             if not code_block_open:
+                # Início de um bloco de código
                 code_block_open = True
                 i += 3
+                # Capturar a linguagem (se houver) até a próxima quebra de linha
+                lang = ""
+                while i < length and text[i] != "\n":
+                    lang += text[i]
+                    i += 1
+                if i < length:
+                    i += 1  # Pular a quebra de linha após a linguagem
+                result += "```" + lang + "\n"
+                # Acumular o conteúdo até o próximo ```
                 while i < length:
                     if i + 2 < length and text[i:i+3] == "```":
                         i += 3
                         code_block_open = False
-                        result += pre_block_text.strip() + "\n```" + code_block_content.strip() + "```"
-                        pre_block_text = ""
+                        result += code_block_content.rstrip() + "```"
                         code_block_content = ""
                         break
-                    code_block_content += text[i]
+                    # Escapar \ dentro do bloco de código
+                    if text[i] == "\\":
+                        code_block_content += "\\\\"
+                    else:
+                        code_block_content += text[i]
                     i += 1
             else:
-                i += 3  # Ignorar ``` extras
+                # Ignorar ``` extras dentro do bloco
+                i += 3
         elif i + 1 < length and text[i:i+2] == "**":
-            if code_block_open:
-                code_block_content += "**"
-            else:
-                result += "*"
+            result += "*" if not code_block_open else "**"
             i += 2
             while i < length and text[i:i+2] != "**":
                 if text[i] in reserved_chars and not code_block_open:
@@ -81,16 +91,10 @@ def escape_markdown_v2(text):
                     result += text[i]
                 i += 1
             if i + 1 < length:
-                if code_block_open:
-                    code_block_content += "**"
-                else:
-                    result += "*"
+                result += "*" if not code_block_open else "**"
                 i += 2
         elif text[i] == "`":
-            if code_block_open:
-                code_block_content += "`"
-            else:
-                result += "`"
+            result += "`" if not code_block_open else "`"
             i += 1
             while i < length and text[i] != "`":
                 if code_block_open:
@@ -99,16 +103,10 @@ def escape_markdown_v2(text):
                     result += text[i]
                 i += 1
             if i < length:
-                if code_block_open:
-                    code_block_content += "`"
-                else:
-                    result += "`"
+                result += "`" if not code_block_open else "`"
                 i += 1
         elif text[i] == "*":
-            if code_block_open:
-                code_block_content += "*"
-            else:
-                result += "*"
+            result += "*" if not code_block_open else "*"
             i += 1
             while i < length and text[i] != "*":
                 if text[i] in reserved_chars and not code_block_open:
@@ -119,14 +117,11 @@ def escape_markdown_v2(text):
                     result += text[i]
                 i += 1
             if i < length:
-                if code_block_open:
-                    code_block_content += "*"
-                else:
-                    result += "*"
+                result += "*" if not code_block_open else "*"
                 i += 1
         elif text[i] == ">":
             if not code_block_open and (i == 0 or text[i-1] == "\n"):
-                result += ">"  # Preservar > como citação no início da linha
+                result += ">"
             elif code_block_open:
                 code_block_content += ">"
             else:
@@ -138,15 +133,12 @@ def escape_markdown_v2(text):
             elif text[i] in reserved_chars:
                 result += "\\" + text[i]
             else:
-                if code_block_open:
-                    pre_block_text += text[i]
-                else:
-                    result += text[i]
+                result += text[i]
             i += 1
 
     # Fechar bloco de código se ainda estiver aberto
     if code_block_open:
-        result += pre_block_text.strip() + "\n```" + code_block_content.strip() + "```"
+        result += code_block_content.rstrip() + "```"
 
     # Garantir que o resultado nunca seja vazio
     if not result:
