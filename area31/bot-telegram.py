@@ -220,13 +220,6 @@ def get_prompt() -> str:
     # Adicionar instrução de limite de caracteres
     return f"{base_prompt}\n\nSua resposta deve ter no máximo 4000 caracteres para caber no limite do Telegram (4096 caracteres, incluindo formatação). Se necessário, resuma ou ajuste o conteúdo para não ultrapassar esse limite."
 
-# Comando de teste para negrito
-@bot.message_handler(commands=['testenegrito'])
-def teste_negrito(message):
-    texto = "*Esse texto deve estar em negrito, amigo\.**\n\nEsse texto não deve estar em negrito, amigo\."
-    logging.info(f"Enviando texto de teste: {texto}")
-    bot.send_message(message.chat.id, texto, parse_mode='MarkdownV2')
-
 # Xingamentos
 @bot.message_handler(commands=['xinga'])
 def random_message(message):
