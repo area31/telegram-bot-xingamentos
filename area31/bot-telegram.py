@@ -428,21 +428,34 @@ def youtube_search_command(message):
         return
 
     API_KEY = open("token-google.cfg").read().strip()
-    search_url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&key={API_KEY}"
+    search_url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&maxResults=5&key={API_KEY}"
 
     try:
-        results = requests.get(search_url).json()
-        if results.get("pageInfo").get("totalResults") == 0:
+        response = requests.get(search_url)
+        response.raise_for_status()
+        data = response.json()
+
+        items = data.get("items", [])
+        if not items:
             bot.send_message(chat_id=message.chat.id, text="Não foram encontrados resultados para a sua pesquisa.")
             return
-        results = results["items"]
-        response = "Resultados da pesquisa no YouTube para '" + query + "': \n"
-        for result in results[:5]:
-            response += result["snippet"]["title"] + " - https://www.youtube.com/watch?v=" + result["id"]["videoId"] + "\n"
-    except (requests.exceptions.RequestException, KeyError) as e:
-        response = "Desculpe, ocorreu um erro ao acessar a API do YouTube. Por favor, tente novamente mais tarde."
 
-    bot.send_message(chat_id=message.chat.id, text=response)
+        resposta = f"🔎 Resultados do YouTube para *{query}*:\n\n"
+        for item in items:
+            video_id = item["id"].get("videoId")
+            titulo = item["snippet"].get("title")
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            resposta += f"- {titulo}\n{url}\n\n"
+
+        bot.send_message(chat_id=message.chat.id, text=resposta.strip())
+
+    except requests.exceptions.RequestException as e:
+        bot.send_message(chat_id=message.chat.id, text="Erro ao acessar a API do YouTube.")
+        logging.error(f"Erro YouTube API: {str(e)}")
+    except Exception as e:
+        bot.send_message(chat_id=message.chat.id, text="Erro inesperado ao buscar no YouTube.")
+        logging.error(f"Erro inesperado /youtube: {str(e)}")
+
 
 # Busca no Google
 @bot.message_handler(commands=['search'])
