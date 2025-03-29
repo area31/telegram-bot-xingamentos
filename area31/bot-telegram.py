@@ -622,10 +622,8 @@ def responder_boa_cabelo(message):
 
 #########################################################################################
 
-@bot.message_handler(func=lambda message: message.chat.type != 'private' and
-                     message.text is not None and
-                     message.text.lower().startswith('/imagem'))
 def responder_imagem(message):
+    inicio = time.time()
     prompt = message.text[len('/imagem'):].strip()
 
     if not prompt:
@@ -651,18 +649,31 @@ def responder_imagem(message):
 
         if image_url:
             bot.send_photo(message.chat.id, image_url, reply_to_message_id=message.message_id)
+            duracao = round(time.time() - inicio, 2)
+            logging.info(f"Imagem gerada com sucesso em {duracao} segundos para prompt: '{prompt}' por @{message.from_user.username}")
         else:
             bot.reply_to(message, "Não consegui obter a imagem gerada.")
 
     except requests.exceptions.HTTPError as e:
-        bot.reply_to(message, f"Erro ao chamar a API da xAI: {str(e)}")
+        try:
+            erro_detalhes = response.json()
+            mensagem_erro = erro_detalhes.get("error", "Erro desconhecido.")
+            codigo_erro = erro_detalhes.get("code", "sem código")
+            resposta_formatada = f"❌ Erro ao gerar imagem:\n{mensagem_erro}\n\n(código: {response.status_code} - {codigo_erro})"
+        except Exception:
+            resposta_formatada = f"❌ Erro ao chamar a API da xAI: {str(e)}"
+        bot.reply_to(message, resposta_formatada)
         logging.error(f"Erro HTTP: {response.status_code} - {response.text}")
+
     except Exception as e:
         bot.reply_to(message, f"Ocorreu um erro: {str(e)}")
         logging.error(f"Erro geral: {str(e)}")
 
     logging.info(f"Tentativa de gerar imagem para '{prompt}' por @{message.from_user.username}")
 
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/imagem'))
+def handle_imagem(message):
+    responder_imagem(message)
 
 
 
