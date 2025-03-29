@@ -22,7 +22,7 @@ logging.basicConfig(filename='bot-telegram.log', level=logging.INFO, format='%(a
 logging.info("Bot iniciado.")
 
 # Rate limit
-REQUEST_LIMIT = 20
+REQUEST_LIMIT = 40
 TIME_WINDOW = 60
 request_count = 0
 start_time = time.time()
@@ -522,6 +522,7 @@ def help_message(message):
     help_text += '/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...\n'
     help_text += '/youtube - Exibe resultados de busca de vídeos no Youtube\n'
     help_text += '/search - Exibe resultados de busca no Google\n'
+    help_text += '/imagem - Gera uma imagem a partir de um texto (ex.: /imagem porco deitado na grama)\n'
     help_text += '/testenegrito - Testa o envio de texto em negrito'
     bot.send_message(message.chat.id, help_text)
 
@@ -613,5 +614,52 @@ def responder_boa_cabelo(message):
     bot.reply_to(message, "vlw barba")
     logging.info(f"Resposta 'vlw barba' enviada para '{message.text}' por @{message.from_user.username}")
 
+#########################################################################################
+
+@bot.message_handler(func=lambda message: message.chat.type != 'private' and
+                     message.text is not None and
+                     message.text.lower().startswith('/imagem'))
+def responder_imagem(message):
+    prompt = message.text[len('/imagem'):].strip()
+
+    if not prompt:
+        bot.reply_to(message, "Por favor, forneça uma descrição para a imagem. Exemplo: /imagem porco deitado na grama")
+        return
+
+    try:
+        xai_api_url = "https://api.x.ai/v1/images/generations"
+        headers = {
+            "Authorization": f"Bearer {XAI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "grok-2-image",
+            "prompt": prompt,
+            "n": 1
+        }
+
+        response = requests.post(xai_api_url, json=payload, headers=headers)
+        response.raise_for_status()
+
+        image_url = response.json()["data"][0]["url"]
+
+        if image_url:
+            bot.send_photo(message.chat.id, image_url, reply_to_message_id=message.message_id)
+        else:
+            bot.reply_to(message, "Não consegui obter a imagem gerada.")
+
+    except requests.exceptions.HTTPError as e:
+        bot.reply_to(message, f"Erro ao chamar a API da xAI: {str(e)}")
+        logging.error(f"Erro HTTP: {response.status_code} - {response.text}")
+    except Exception as e:
+        bot.reply_to(message, f"Ocorreu um erro: {str(e)}")
+        logging.error(f"Erro geral: {str(e)}")
+
+    logging.info(f"Tentativa de gerar imagem para '{prompt}' por @{message.from_user.username}")
+
+
+
+
+#########################################################################################
 # Inicia o bot
 bot.polling()
