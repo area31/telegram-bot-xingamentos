@@ -528,8 +528,7 @@ def help_message(message):
     help_text += '/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...\n'
     help_text += '/youtube - Exibe resultados de busca de vídeos no Youtube\n'
     help_text += '/search - Exibe resultados de busca no Google\n'
-    help_text += '/imagem - Gera uma imagem a partir de um texto (ex.: /imagem porco deitado na grama)\n'
-    help_text += '/testenegrito - Testa o envio de texto em negrito'
+    help_text += '/imagem - Gera uma imagem a partir de um texto (ex.: /imagem porco deitado na grama)'
     bot.send_message(message.chat.id, help_text)
 
 @bot.message_handler(commands=['add'])
