@@ -647,11 +647,13 @@ def responder_imagem(message):
         image_url = response.json()["data"][0]["url"]
 
         if image_url:
-            bot.send_photo(message.chat.id, image_url, reply_to_message_id=message.message_id)
             duracao = round(time.time() - inicio, 2)
+            legenda = f"🖼️ Imagem gerada em {duracao} segundos"
+            bot.send_photo(message.chat.id, image_url, caption=legenda, reply_to_message_id=message.message_id)
             logging.info(f"Imagem gerada com sucesso em {duracao} segundos para prompt: '{prompt}' por @{message.from_user.username}")
         else:
             bot.reply_to(message, "Não consegui obter a imagem gerada.")
+
 
     except requests.exceptions.HTTPError as e:
         try:
