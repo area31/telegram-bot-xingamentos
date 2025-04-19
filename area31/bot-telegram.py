@@ -33,6 +33,11 @@ config_telegram.read('token-telegram.cfg')
 TOKEN = config_telegram['DEFAULT']['TOKEN']
 bot = telebot.TeleBot(TOKEN)
 
+# Configuração da CoinCap API v3
+config_coincap = configparser.ConfigParser()
+config_coincap.read('token-coincap.cfg')
+COINCAP_API_KEY = config_coincap['DEFAULT']['TOKEN']
+
 # Limite de caracteres do Telegram
 TELEGRAM_MAX_CHARS = 4096
 
@@ -498,14 +503,15 @@ def dolar_message(message):
     valor_dolar = dolar_data['USD']['bid']
     bot.send_message(message.chat.id, 'O valor atual do dólar em reais é R$ ' + valor_dolar)
 
-# Função auxiliar para formatar preços (opcional, para consistência)
+# Função auxiliar para formatar preços
 def format_price(price: float) -> str:
     return f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-# Comandos de cotação (modificados)
+# Comandos de cotação coincap
+# Comandos de cotação (atualizados para API v3)
 @bot.message_handler(commands=['btc'])
 def bitcoin_price(message):
-    url = "https://api.coincap.io/v2/assets/bitcoin"
+    url = f"https://rest.coincap.io/v3/assets/bitcoin?apiKey={COINCAP_API_KEY}"
     logging.info(f"Comando /btc chamado por @{message.from_user.username}, URL: {url}")
     
     try:
@@ -521,7 +527,7 @@ def bitcoin_price(message):
             logging.info(f"Resposta /btc: {response_text}")
             bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         else:
-            # Trata mensagem de depreciação ou resposta inesperada
+            # Trata mensagem de erro ou resposta inesperada
             error_msg = data.get('data', {}).get('message', 'Resposta inesperada da API')
             logging.error(f"Erro /btc: {error_msg}")
             bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao obter cotação do Bitcoin: {error_msg}"), parse_mode='MarkdownV2')
@@ -541,7 +547,7 @@ def bitcoin_price(message):
 
 @bot.message_handler(commands=['xmr'])
 def handle_btc(message):
-    url = "https://api.coincap.io/v2/assets/monero"
+    url = f"https://rest.coincap.io/v3/assets/monero?apiKey={COINCAP_API_KEY}"
     logging.info(f"Comando /xmr chamado por @{message.from_user.username}, URL: {url}")
     
     try:
@@ -557,7 +563,7 @@ def handle_btc(message):
             logging.info(f"Resposta /xmr: {response_text}")
             bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         else:
-            # Trata mensagem de depreciação ou resposta inesperada
+            # Trata mensagem de erro ou resposta inesperada
             error_msg = data.get('data', {}).get('message', 'Resposta inesperada da API')
             logging.error(f"Erro /xmr: {error_msg}")
             bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao obter cotação do Monero: {error_msg}"), parse_mode='MarkdownV2')
@@ -574,6 +580,8 @@ def handle_btc(message):
     except Exception as e:
         logging.error(f"Erro inesperado /xmr: {str(e)}")
         bot.send_message(message.chat.id, escape_markdown_v2("Erro inesperado ao consultar Monero. Tente novamente!"), parse_mode='MarkdownV2')
+
+
 # Comandos de ajuda e gerenciamento de frases
 @bot.message_handler(commands=['ajuda'])
 def help_message(message):
