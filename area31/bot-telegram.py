@@ -199,7 +199,8 @@ BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'openai')  # Default para OpenAI se
 MAX_TOKENS = 1000  # Mantido para dar espaço, mas o prompt controlará o tamanho
 TEMPERATURE = 0.8
 OPENAI_MODEL = "gpt-4"  # Ou "gpt-3.5-turbo"
-XAI_MODEL = "grok-2-latest"
+# Default grok2-latest caso nao seja especificado no bot-telegram.cfg
+XAI_MODEL = config_bot['DEFAULT'].get('XAI_MODEL', 'grok-2-latest')
 
 def count_tokens(messages):
     total_tokens = 0
