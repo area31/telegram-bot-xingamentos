@@ -498,22 +498,82 @@ def dolar_message(message):
     valor_dolar = dolar_data['USD']['bid']
     bot.send_message(message.chat.id, 'O valor atual do dólar em reais é R$ ' + valor_dolar)
 
+# Função auxiliar para formatar preços (opcional, para consistência)
+def format_price(price: float) -> str:
+    return f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+# Comandos de cotação (modificados)
 @bot.message_handler(commands=['btc'])
 def bitcoin_price(message):
     url = "https://api.coincap.io/v2/assets/bitcoin"
-    response = requests.get(url)
-    data = response.json()
-    price = round(float(data['data']['priceUsd']), 2)
-    bot.send_message(message.chat.id, f'Cotação atual do Bitcoin em dolar: ${price}')
+    logging.info(f"Comando /btc chamado por @{message.from_user.username}, URL: {url}")
+    
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # Levanta exceção para códigos 4xx/5xx
+        data = response.json()
+        
+        # Verifica se a resposta contém 'data' e 'priceUsd'
+        if 'data' in data and 'priceUsd' in data['data']:
+            price = round(float(data['data']['priceUsd']), 2)
+            formatted_price = format_price(price)
+            response_text = f"Cotação atual do Bitcoin em dólar: ${formatted_price}"
+            logging.info(f"Resposta /btc: {response_text}")
+            bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
+        else:
+            # Trata mensagem de depreciação ou resposta inesperada
+            error_msg = data.get('data', {}).get('message', 'Resposta inesperada da API')
+            logging.error(f"Erro /btc: {error_msg}")
+            bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao obter cotação do Bitcoin: {error_msg}"), parse_mode='MarkdownV2')
+            
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"Erro HTTP /btc: {str(e)}, Status: {response.status_code}")
+        bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao consultar Bitcoin: Problema na API (HTTP {response.status_code})"), parse_mode='MarkdownV2')
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Erro de rede /btc: {str(e)}")
+        bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Bitcoin: Falha na conexão com a API"), parse_mode='MarkdownV2')
+    except (KeyError, TypeError, ValueError) as e:
+        logging.error(f"Erro de parsing /btc: {str(e)}, Resposta: {response.text}")
+        bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Bitcoin: Resposta inválida da API"), parse_mode='MarkdownV2')
+    except Exception as e:
+        logging.error(f"Erro inesperado /btc: {str(e)}")
+        bot.send_message(message.chat.id, escape_markdown_v2("Erro inesperado ao consultar Bitcoin. Tente novamente!"), parse_mode='MarkdownV2')
 
 @bot.message_handler(commands=['xmr'])
 def handle_btc(message):
     url = "https://api.coincap.io/v2/assets/monero"
-    response = requests.get(url)
-    data = response.json()
-    price = round(float(data['data']['priceUsd']), 2)
-    bot.send_message(message.chat.id, f'Cotação atual do Monero em dolar: ${price}')
-
+    logging.info(f"Comando /xmr chamado por @{message.from_user.username}, URL: {url}")
+    
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # Levanta exceção para códigos 4xx/5xx
+        data = response.json()
+        
+        # Verifica se a resposta contém 'data' e 'priceUsd'
+        if 'data' in data and 'priceUsd' in data['data']:
+            price = round(float(data['data']['priceUsd']), 2)
+            formatted_price = format_price(price)
+            response_text = f"Cotação atual do Monero em dólar: ${formatted_price}"
+            logging.info(f"Resposta /xmr: {response_text}")
+            bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
+        else:
+            # Trata mensagem de depreciação ou resposta inesperada
+            error_msg = data.get('data', {}).get('message', 'Resposta inesperada da API')
+            logging.error(f"Erro /xmr: {error_msg}")
+            bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao obter cotação do Monero: {error_msg}"), parse_mode='MarkdownV2')
+            
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"Erro HTTP /xmr: {str(e)}, Status: {response.status_code}")
+        bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao consultar Monero: Problema na API (HTTP {response.status_code})"), parse_mode='MarkdownV2')
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Erro de rede /xmr: {str(e)}")
+        bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Monero: Falha na conexão com a API"), parse_mode='MarkdownV2')
+    except (KeyError, TypeError, ValueError) as e:
+        logging.error(f"Erro de parsing /xmr: {str(e)}, Resposta: {response.text}")
+        bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Monero: Resposta inválida da API"), parse_mode='MarkdownV2')
+    except Exception as e:
+        logging.error(f"Erro inesperado /xmr: {str(e)}")
+        bot.send_message(message.chat.id, escape_markdown_v2("Erro inesperado ao consultar Monero. Tente novamente!"), parse_mode='MarkdownV2')
 # Comandos de ajuda e gerenciamento de frases
 @bot.message_handler(commands=['ajuda'])
 def help_message(message):
