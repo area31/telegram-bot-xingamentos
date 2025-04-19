@@ -508,11 +508,12 @@ def format_price(price: float) -> str:
     return f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 # Comandos de cotação coincap
-# Comandos de cotação (atualizados para API v3)
+# Comandos de cotação (atualizados para API v3 com logging seguro)
 @bot.message_handler(commands=['btc'])
 def bitcoin_price(message):
     url = f"https://rest.coincap.io/v3/assets/bitcoin?apiKey={COINCAP_API_KEY}"
-    logging.info(f"Comando /btc chamado por @{message.from_user.username}, URL: {url}")
+    log_url = "https://rest.coincap.io/v3/assets/bitcoin?apiKey=****"  # URL ofuscada para log
+    logging.info(f"Comando /btc chamado por @{message.from_user.username}, URL: {log_url}")
     
     try:
         response = requests.get(url, timeout=10)
@@ -533,13 +534,13 @@ def bitcoin_price(message):
             bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao obter cotação do Bitcoin: {error_msg}"), parse_mode='MarkdownV2')
             
     except requests.exceptions.HTTPError as e:
-        logging.error(f"Erro HTTP /btc: {str(e)}, Status: {response.status_code}")
+        logging.error(f"Erro HTTP /btc: Status: {response.status_code}")
         bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao consultar Bitcoin: Problema na API (HTTP {response.status_code})"), parse_mode='MarkdownV2')
     except requests.exceptions.RequestException as e:
         logging.error(f"Erro de rede /btc: {str(e)}")
         bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Bitcoin: Falha na conexão com a API"), parse_mode='MarkdownV2')
     except (KeyError, TypeError, ValueError) as e:
-        logging.error(f"Erro de parsing /btc: {str(e)}, Resposta: {response.text}")
+        logging.error(f"Erro de parsing /btc: {str(e)}, Resposta: [redacted]")
         bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Bitcoin: Resposta inválida da API"), parse_mode='MarkdownV2')
     except Exception as e:
         logging.error(f"Erro inesperado /btc: {str(e)}")
@@ -548,7 +549,8 @@ def bitcoin_price(message):
 @bot.message_handler(commands=['xmr'])
 def handle_btc(message):
     url = f"https://rest.coincap.io/v3/assets/monero?apiKey={COINCAP_API_KEY}"
-    logging.info(f"Comando /xmr chamado por @{message.from_user.username}, URL: {url}")
+    log_url = "https://rest.coincap.io/v3/assets/monero?apiKey=****"  # URL ofuscada para log
+    logging.info(f"Comando /xmr chamado por @{message.from_user.username}, URL: {log_url}")
     
     try:
         response = requests.get(url, timeout=10)
@@ -569,18 +571,17 @@ def handle_btc(message):
             bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao obter cotação do Monero: {error_msg}"), parse_mode='MarkdownV2')
             
     except requests.exceptions.HTTPError as e:
-        logging.error(f"Erro HTTP /xmr: {str(e)}, Status: {response.status_code}")
+        logging.error(f"Erro HTTP /xmr: Status: {response.status_code}")
         bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao consultar Monero: Problema na API (HTTP {response.status_code})"), parse_mode='MarkdownV2')
     except requests.exceptions.RequestException as e:
         logging.error(f"Erro de rede /xmr: {str(e)}")
         bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Monero: Falha na conexão com a API"), parse_mode='MarkdownV2')
     except (KeyError, TypeError, ValueError) as e:
-        logging.error(f"Erro de parsing /xmr: {str(e)}, Resposta: {response.text}")
+        logging.error(f"Erro de parsing /xmr: {str(e)}, Resposta: [redacted]")
         bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Monero: Resposta inválida da API"), parse_mode='MarkdownV2')
     except Exception as e:
         logging.error(f"Erro inesperado /xmr: {str(e)}")
         bot.send_message(message.chat.id, escape_markdown_v2("Erro inesperado ao consultar Monero. Tente novamente!"), parse_mode='MarkdownV2')
-
 
 # Comandos de ajuda e gerenciamento de frases
 @bot.message_handler(commands=['ajuda'])
