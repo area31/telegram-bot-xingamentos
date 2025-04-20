@@ -186,7 +186,8 @@ def update_chat_memory(message):
         chat_memory[chat_id] = []
     
     role = "user" if message.from_user.id != bot.get_me().id else "assistant"
-    chat_memory[chat_id].append({"role": role, "content": message.text})
+    content = message.text or message.caption or "[Imagem]"
+    chat_memory[chat_id].append({"role": role, "content": content})
     
     if len(chat_memory[chat_id]) > 10:
         chat_memory[chat_id] = chat_memory[chat_id][-10:]
@@ -197,11 +198,13 @@ def get_chat_history(message, reply_limit: int = 4) -> list:
 
     if message.reply_to_message:
         current_message = message
-        history.append({"role": "user", "content": current_message.text})
+        content = current_message.text or current_message.caption or "[Imagem]"
+        history.append({"role": "user", "content": content})
         while current_message.reply_to_message and len(history) < reply_limit + 1:
             previous_message = current_message.reply_to_message
             role = "assistant" if previous_message.from_user.id == bot.get_me().id else "user"
-            history.append({"role": role, "content": previous_message.text})
+            content = previous_message.text or previous_message.caption or "[Imagem]"
+            history.append({"role": role, "content": content})
             current_message = previous_message
         history.reverse()
     else:
@@ -246,7 +249,8 @@ OPENAI_MODEL = "gpt-4"
 def count_tokens(messages):
     total_tokens = 0
     for msg in messages:
-        total_tokens += len(msg["content"].split()) + 10
+        content = msg["content"] or "[Imagem]"
+        total_tokens += len(content.split()) + 10
     return total_tokens
 
 def get_prompt() -> str:
@@ -302,12 +306,18 @@ def random_message(message):
 def responder(message):
     global start_time, request_count
     username = message.from_user.username or "Unknown"
-    logging.info(f"Mensagem recebida de @{username}: {message.text}")
+    logging.info(f"Mensagem recebida de @{username}: {message.text or '[No text]'}")
 
     if message.chat.type == 'private' or message.from_user.is_bot:
         response_text = "Desculpe, só respondo em grupos e não a bots!"
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
+        return
+
+    if not message.text:
+        response_text = "Desculpe, não posso processar mensagens sem texto! Tente enviar uma mensagem com texto."
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         return
 
     current_time = time.time()
