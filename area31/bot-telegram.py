@@ -345,18 +345,17 @@ def get_prompt() -> str:
             base_prompt = arquivo.read().strip()
             logging.debug("Prompt lido do prompt.cfg")
     except FileNotFoundError:
-        base_prompt = ("Você é um assistente útil e respeitoso em um bot do Telegram. "
-                       "Responda de forma clara, amigável e profissional, mantendo o contexto da conversa. "
-                       "Evite respostas ofensivas ou inadequadas. "
-                       "Se a mensagem for curta (menos de 15 caracteres) ou vaga, peça mais detalhes com base no histórico da conversa. "
-                       "Quando o usuário pedir para 'armazenar a info', guarde a informação em uma lista associada ao ID do usuário. "
-                       "Quando perguntado 'quais são as infos que te pedi pra armazenar?', responda com a lista de informações armazenadas. "
-                       "Se o usuário pedir LaTeX, use o formato de blocos matemáticos do Telegram (  $$ ... $$   para display, \\( ... \\) para inline). "
-                       "Se pedir 'code LaTeX do Telegram', retorne o código LaTeX puro dentro de um bloco de código ```latex ... ```. "
-                       "Se a pergunta for sobre uma imagem gerada (ex.: 'quem são esses?'), explique que você não vê a imagem, mas pode descrever o que tentou gerar com base no prompt de texto fornecido.")
+        base_prompt = (r"Você é um assistente útil e respeitoso em um bot do Telegram. "
+                       r"Responda de forma clara, amigável e profissional, mantendo o contexto da conversa. "
+                       r"Evite respostas ofensivas ou inadequadas. "
+                       r"Se a mensagem for curta (menos de 15 caracteres) ou vaga, peça mais detalhes com base no histórico da conversa. "
+                       r"Quando o usuário pedir para 'armazenar a info', guarde a informação em uma lista associada ao ID do usuário. "
+                       r"Quando perguntado 'quais são as infos que te pedi pra armazenar?', responda com a lista de informações armazenadas. "
+                       r"Se o usuário pedir LaTeX, use o formato de blocos matemáticos do Telegram ($$ ... $$ para display, \( ... \) para inline). "
+                       r"Se pedir 'code LaTeX do Telegram', retorne o código LaTeX puro dentro de um bloco de código ```latex ... ```. "
+                       r"Se a pergunta for sobre uma imagem gerada (ex.: 'quem são esses?'), explique que você não vê a imagem, mas pode descrever o que tentou gerar com base no prompt de texto fornecido.")
         logging.warning("prompt.cfg não encontrado, usando prompt padrão")
     return f"{base_prompt}\n\nSua resposta deve ter no máximo 4000 caracteres para caber no limite do Telegram (4096 caracteres, incluindo formatação). Se necessário, resuma ou ajuste o conteúdo para não ultrapassar esse limite."
-
 # Handler pro comando /xinga - manda um xingamento aleatório
 @bot.message_handler(commands=['xinga'])
 def random_message(message):
@@ -563,19 +562,19 @@ def responder(message):
                     time.sleep(2 ** attempt)  # Backoff exponencial
                     continue
                 raise  # Levanta o erro na última tentativa
-
+    
         response_time = time.time() - start_time
         if not answer or len(answer) < 10:
             logging.warning(f"Resposta inválida da API para @{username}: {answer}")
             answer = "Opa, não consegui processar direito sua instrução. Tenta explicar de novo ou pedir algo diferente!"
-
+    
         logging.info(f"Resposta gerada em {response_time:.2f}s usando {BOT_AI} para @{username}: {answer[:100]}...")
-
+    
         chat_memory[chat_id].append({"role": "assistant", "content": answer})
         answer_escaped = escape_markdown_v2(answer)
         logging.debug(f"Texto antes do escape para @{username}: {answer[:100]}...")
         logging.debug(f"Texto após escape para @{username}: {answer_escaped[:100]}...")
-
+    
         # Tenta enviar a resposta com MarkdownV2
         try:
             if message.reply_to_message:
@@ -587,7 +586,7 @@ def responder(message):
             logging.error(error_msg)
             # Fallback: tenta sem LaTeX
             try:
-                simplified_answer = answer.replace(r'\[', '').replace(r' $$', '').replace(r'$$ ', '').replace(r' $$', '').replace(' \]', '')
+                simplified_answer = answer.replace(r'\[', '').replace(r'\]', '').replace(r'\(', '').replace(r'\)', '').replace('$$', '')
                 simplified_escaped = escape_markdown_v2(simplified_answer)
                 if message.reply_to_message:
                     bot.reply_to(message, simplified_escaped, parse_mode='MarkdownV2')
@@ -610,7 +609,7 @@ def responder(message):
                     response_text = "Deu uma zica aqui, brother! Tenta depois!"
                     bot.send_message(message.chat.id, response_text)
                     logging.info(f"Resposta para @{username}: {response_text}")
-
+    
     except OpenAIError as e:
         error_msg = f"[ERROR] Erro na API da OpenAI para @{username}: {str(e)}"
         logging.error(error_msg)
@@ -629,7 +628,6 @@ def responder(message):
         response_text = "Deu uma zica aqui, brother! Tenta depois!"
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
-
 # Handler pra busca no YouTube
 @bot.message_handler(commands=['youtube'])
 def youtube_search_command(message):
