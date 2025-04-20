@@ -164,70 +164,53 @@ def insert_frase(frase: str):
         conn.commit()
     logging.debug(f"Frase inserida: {frase}")
 
-def get_random_frase() -> str:
-    with sqlite3.connect('frases.db') as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT frase FROM frases ORDER BY RANDOM() LIMIT 1")
-        result = cursor.fetchone()
-        return result[0] if result else None
-    logging.debug("Frase aleatória buscada")
-
-def update_chat_memory(message):
-    chat_id = message.chat.id
-    if chat_id not in chat_memory:
-        chat_memory[chat_id] = []
-
-    role = "user" if message.from_user.id != bot.get_me().id else "assistant"
-    # Inclui texto, legenda de foto, ou "[Imagem]" como fallback
-    content = message.text or message.caption or "[Imagem]"
-    chat_memory[chat_id].append({"role": role, "content": content})
-    logging.debug(f"Adicionada ao chat_memory (chat_id {chat_id}, role: {role}): {content[:50]}...")
-
-    # Limite de 20 mensagens
-    if len(chat_memory[chat_id]) > 20:
-        chat_memory[chat_id] = chat_memory[chat_id][-20:]
-        logging.debug(f"Chat_memory para chat_id {chat_id} limitado a 20 mensagens")
-
-    logging.debug(f"Memória de chat atualizada para chat_id {chat_id}: {len(chat_memory[chat_id])} mensagens")
-
+###########################################################################################################
 def get_chat_history(message, reply_limit: int = 12) -> list:
     chat_id = message.chat.id
+    user_id = message.from_user.id if message.from_user else None
     history = []
 
     logging.debug(f"Construindo histórico para chat_id {chat_id} com reply_limit {reply_limit}")
 
+    # Sempre adiciona a mensagem atual
+    content = message.text or message.caption or "[Imagem]"
+    history.append({"role": "user", "content": content, "user_id": user_id})
+    logging.debug(f"Adicionada mensagem atual do usuário: {content[:50]}...")
+
     # Coleta mensagens encadeadas (reply_to_message)
     if message.reply_to_message:
         current_message = message
-        content = current_message.text or current_message.caption or "[Imagem]"
-        history.append({"role": "user", "content": content})
-        logging.debug(f"Adicionada mensagem inicial do usuário: {content[:50]}...")
         while current_message.reply_to_message and len(history) < reply_limit:
             previous_message = current_message.reply_to_message
-            role = "assistant" if previous_message.from_user.id == bot.get_me().id else "user"
+            previous_user_id = previous_message.from_user.id if previous_message.from_user else None
+            role = "assistant" if previous_user_id and previous_user_id == bot.get_me().id else "user"
             content = previous_message.text or previous_message.caption or "[Imagem]"
-            history.append({"role": role, "content": content})
-            logging.debug(f"Adicionada mensagem encadeada (role: {role}): {content[:50]}...")
+            history.append({"role": role, "content": content, "user_id": previous_user_id})
+            logging.debug(f"Adicionada mensagem encadeada (role: {role}, user_id: {previous_user_id}): {content[:50]}...")
             current_message = previous_message
         history.reverse()
 
     # Adiciona mensagens do chat_memory, se disponíveis
     if chat_id in chat_memory and len(history) < reply_limit:
         memory_messages = chat_memory[chat_id].copy()
-        # Filtra mensagens já incluídas no encadeamento pra evitar duplicatas
         existing_contents = {msg["content"] for msg in history}
-        additional_messages = [
-            msg for msg in memory_messages
-            if msg["content"] not in existing_contents
-        ]
-        # Adiciona mensagens do chat_memory até atingir reply_limit
+        additional_messages = []
+        for msg in memory_messages:
+            # Verifica se a mensagem tem user_id válido e conteúdo não duplicado
+            if ("user_id" not in msg or msg["user_id"] is None) and msg["role"] != "assistant":
+                logging.debug(f"Ignorando mensagem do chat_memory sem user_id: {msg['content'][:50]}...")
+                continue
+            if msg["content"] in existing_contents:
+                continue
+            if msg["role"] == "assistant" or (user_id and msg.get("user_id") == user_id):
+                additional_messages.append(msg)
         for msg in additional_messages[:reply_limit - len(history)]:
             history.insert(0, msg)
-            logging.debug(f"Adicionada mensagem do chat_memory (role: {msg['role']}): {msg['content'][:50]}...")
+            logging.debug(f"Adicionada mensagem do chat_memory (role: {msg['role']}, user_id: {msg.get('user_id')}): {msg['content'][:50]}...")
 
     # Limita por tokens
     token_count = count_tokens(history)
-    max_allowed_tokens = MAX_TOKENS * 0.9  # 90% de MAX_TOKENS (900 tokens)
+    max_allowed_tokens = MAX_TOKENS * 0.9  # 90% de MAX_TOKENS
     logging.debug(f"Contagem inicial de tokens: {token_count}, máximo permitido: {max_allowed_tokens}")
     while token_count > max_allowed_tokens and history:
         removed_message = history.pop(0)
@@ -236,7 +219,171 @@ def get_chat_history(message, reply_limit: int = 12) -> list:
 
     logging.debug(f"Histórico final obtido para chat_id {chat_id}: {len(history)} mensagens")
     return history
+###########################################################################################################
 
+def get_random_frase() -> str:
+    with sqlite3.connect('frases.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT frase FROM frases ORDER BY RANDOM() LIMIT 1")
+        result = cursor.fetchone()
+        return result[0] if result else None
+    logging.debug("Frase aleatória buscada")
+
+######################################################################################################
+def update_chat_memory(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id if message.from_user else None
+    if chat_id not in chat_memory:
+        chat_memory[chat_id] = []
+
+    bot_username = bot.get_me().username
+    is_direct_message = message.text and bot_username in message.text
+    is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.id == bot.get_me().id
+    if not (message.reply_to_message or is_direct_message or is_reply_to_bot):
+        logging.debug(f"Mensagem ignorada para chat_memory (chat_id {chat_id}): não é uma reply, mensagem direta ou reply ao bot - {message.text or message.caption or '[Imagem]'}[:50]...")
+        return
+
+    role = "user" if not message.from_user or (message.from_user and message.from_user.id != bot.get_me().id) else "assistant"
+    content = message.text or message.caption or "[Imagem]"
+    if user_id is None and role != "assistant":
+        logging.debug(f"Ignorando mensagem sem user_id para chat_memory (chat_id {chat_id}): {content[:50]}...")
+        return
+    chat_memory[chat_id].append({"role": role, "content": content, "user_id": user_id})
+    logging.debug(f"Adicionada ao chat_memory (chat_id {chat_id}, role: {role}, user_id: {user_id}): {content[:50]}...")
+
+    if len(chat_memory[chat_id]) > 20:
+        chat_memory[chat_id] = chat_memory[chat_id][-20:]
+        logging.debug(f"Chat_memory para chat_id {chat_id} limitado a 20 mensagens")
+
+    logging.debug(f"Memória de chat atualizada para chat_id {chat_id}: {len(chat_memory[chat_id])} mensagens")
+######################################################################################################
+def format_price(price: float) -> str:
+    return f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+######################################################################################################
+def formatar_resposta_ia(texto):
+    logging.debug(f"Texto bruto recebido para formatação: {texto}")
+
+    # Preserva blocos LaTeX
+    latex_blocks = []
+    def store_latex(match):
+        latex_blocks.append(match.group(0))
+        return f"__LATEX_{len(latex_blocks)-1}__"
+
+    texto = re.sub(r'\$\$[\s\S]*?\$\$', store_latex, texto, flags=re.DOTALL)
+    texto = re.sub(r'\\\([\s\S]*?\\\)', store_latex, texto, flags=re.DOTALL)
+    logging.debug(f"Texto com placeholders LaTeX: {texto}")
+
+    # Preserva marcadores MarkdownV2
+    markdown_blocks = []
+    def store_markdown(match):
+        markdown_blocks.append(match.group(0))
+        return f"__MARKDOWN_{len(markdown_blocks)-1}__"
+
+    # Padrões Markdown
+    markdown_patterns = [
+        (r'\*\*[^\*]+\*\*', 'bold'),  # Negrito
+        (r'_[^_]+_', 'italic'),      # Itálico
+        (r'~[^~]+~', 'strikethrough'),  # Riscado
+        (r'__[^_]+__', 'underline'),   # Sublinhado
+        (r'\|\|[^\|]+\|\|', 'spoiler'),  # Spoiler
+        (r'`[^`]+`', 'code'),          # Código inline
+        (r'```[\s\S]*?```', 'code_block'),  # Bloco de código
+        (r'\[[^\]]+\]\([^\)]+\)', 'link'),  # Links
+    ]
+
+    # Aplica padrões sequencialmente, protegendo placeholders
+    for pattern, pattern_type in markdown_patterns:
+        # Substitui apenas se não estiver dentro de um placeholder existente
+        def safe_replace(match):
+            text = match.group(0)
+            if re.search(r'__MARKDOWN_\d+__', text):
+                return text  # Ignora se já contém um placeholder
+            return store_markdown(match)
+        texto = re.sub(pattern, safe_replace, texto, flags=re.DOTALL)
+        logging.debug(f"Texto após padrão {pattern_type}: {texto}")
+    logging.debug(f"Texto com placeholders Markdown: {texto}")
+
+    # Escapa caracteres reservados fora dos placeholders
+    reserved_chars = r'([_\*\[\]\(\)\~`>\#\+\-\=\|\{\}\.\!])'
+    partes = []
+    pos = 0
+    for match in re.finditer(r'__MARKDOWN_\d+__', texto):
+        start, end = match.span()
+        if pos < start:
+            parte = re.sub(reserved_chars, r'\\\1', texto[pos:start])
+            partes.append(parte)
+        partes.append(texto[start:end])
+        pos = end
+    if pos < len(texto):
+        parte = re.sub(reserved_chars, r'\\\1', texto[pos:])
+        partes.append(parte)
+    texto = "".join(partes)
+
+    # Restaura blocos Markdown
+    for i, block in enumerate(markdown_blocks):
+        placeholder = f"__MARKDOWN_{i}__"
+        if block.startswith('**') and block.endswith('**'):
+            content = block[2:-2]
+            escaped_content = re.sub(reserved_chars, r'\\\1', content)
+            texto = texto.replace(placeholder, f"**{escaped_content}**")
+        elif block.startswith('_') and block.endswith('_'):
+            content = block[1:-1]
+            escaped_content = re.sub(reserved_chars, r'\\\1', content)
+            texto = texto.replace(placeholder, f"_{escaped_content}_")
+        elif block.startswith('[') and block.endswith(')'):
+            link_match = re.match(r'\[(.*?)\]\((.*?)\)', block)
+            if link_match:
+                link_text = link_match.group(1)
+                url = link_match.group(2)
+                escaped_link_text = re.sub(reserved_chars, r'\\\1', link_text)
+                texto = texto.replace(placeholder, f"[{escaped_link_text}]({url})")
+        else:
+            texto = texto.replace(placeholder, block)
+
+    # Aplica formatação para listas numeradas
+    linhas = texto.split("\n")
+    novas_linhas = []
+    for linha in linhas:
+        if linha.strip().startswith(("\d+\.", "- ")):
+            match = re.match(r'(\d+\.\s+|-\s+)(.+?)(?:\s*\(([^)]+)\)|\s*[-–]\s*(.+))?$', linha)
+            if match:
+                prefixo = match.group(1).strip()
+                titulo = match.group(2).strip()
+                parentese = match.group(3) if match.group(3) else ""
+                descricao = match.group(4) if match.group(4) else ""
+                # Aplica negrito ao título apenas se não estiver formatado
+                if not (titulo.startswith('*') and titulo.endswith('*')):
+                    titulo_escaped = re.sub(reserved_chars, r'\\\1', titulo)
+                    titulo_formatado = f"*{titulo_escaped}*"
+                else:
+                    titulo_formatado = titulo
+                # Aplica itálico ao parêntese, se existir
+                if parentese and not (parentese.startswith('_') and parentese.endswith('_')):
+                    parentese_escaped = re.sub(reserved_chars, r'\\\1', parentese)
+                    parentese_formatado = f" _{parentese_escaped}_"
+                else:
+                    parentese_formatado = f" {parentese}" if parentese else ""
+                # Escapa a descrição
+                if descricao:
+                    descricao_escaped = re.sub(reserved_chars, r'\\\1', descricao)
+                    descricao_formatado = f" – {descricao_escaped}"
+                else:
+                    descricao_formatado = ""
+                linha_formatada = f"{prefixo} {titulo_formatado}{parentese_formatado}{descricao_formatado}"
+                novas_linhas.append(linha_formatada)
+            else:
+                novas_linhas.append(linha)
+        else:
+            novas_linhas.append(linha)
+    texto = "\n".join(novas_linhas)
+
+    # Restaura blocos LaTeX
+    for i, block in enumerate(latex_blocks):
+        texto = texto.replace(f"__LATEX_{i}__", block)
+
+    logging.debug(f"Texto final com Markdown e LaTeX restaurado: {texto}")
+    return texto
+######################################################################################################
 def clear_stored_info(user_id):
     if user_id in stored_info:
         del stored_info[user_id]
@@ -268,89 +415,10 @@ def get_prompt() -> str:
         logging.warning("prompt.cfg não encontrado, usando prompt padrão")
     return f"{base_prompt}\n\nSua resposta deve ter no máximo 4000 caracteres para caber no limite do Telegram. Evite usar asteriscos (*) ou outros caracteres especiais em excesso, a menos que necessários para formatação."
 
-def formatar_resposta_ia(texto):
-    # Log do texto bruto recebido
-    logging.debug(f"Texto bruto recebido para formatação: {texto}")
+######################################################################
+######################################################################
+# função de resposta do BOT
 
-    # Preserva blocos LaTeX
-    latex_blocks = []
-    def store_latex(match):
-        latex_blocks.append(match.group(0))
-        return f"__LATEX_{len(latex_blocks)-1}__"
-
-    # Substitui blocos LaTeX separadamente (display e inline)
-    texto = re.sub(r'\$\$[\s\S]*?\$\$', store_latex, texto, flags=re.DOTALL)
-    texto = re.sub(r'\\$$ [\s\S]*?\\ $$', store_latex, texto, flags=re.DOTALL)
-
-    # Log do texto com placeholders
-    logging.debug(f"Texto com placeholders LaTeX: {texto}")
-
-    # Preserva marcadores MarkdownV2 (negrito, itálico, etc.)
-    markdown_blocks = []
-    def store_markdown(match):
-        markdown_blocks.append(match.group(0))
-        return f"__MARKDOWN_{len(markdown_blocks)-1}__"
-
-    # Substitui marcadores MarkdownV2
-    markdown_patterns = [
-        r'\*\*[^\*]+\*\*',  # Negrito
-        r'\*[^\*]+\*',      # Itálico
-        r'~[^~]+~',         # Riscado
-        r'__[^_]+__',       # Sublinhado
-        r'\|\|[^\|]+\|\|',  # Spoiler
-        r'`[^`]+`',         # Código inline
-        r'```[\s\S]*?```'   # Bloco de código
-    ]
-    for pattern in markdown_patterns:
-        texto = re.sub(pattern, store_markdown, texto, flags=re.DOTALL)
-
-    # Log do texto com placeholders Markdown
-    logging.debug(f"Texto com placeholders Markdown: {texto}")
-
-    # Aplica escape apenas ao texto fora dos placeholders
-    if "Complexidade:" in texto:
-        linhas = texto.split("\n")
-        elementos = []
-        for linha in linhas:
-            if linha.strip().startswith(("1.", "2.", "3.", "4.")):
-                partes = linha.split(":", 1)
-                if len(partes) == 2:
-                    titulo, descricao = partes
-                    titulo = titulo.strip().replace("**", "").replace("*", "").strip("1.234. ")
-                    complexidade = re.search(r'O$$ [^ $$]+\)', descricao)
-                    if complexidade:
-                        complexidade = complexidade.group(0)
-                        descricao = descricao.replace(complexidade, tf.code_md(complexidade))
-                    elementos.append(f"- {tf.bold_md(titulo)}: {tf.escape_markdown_v2(descricao.strip())}")
-            else:
-                elementos.append(tf.escape_markdown_v2(linha.strip()))
-        texto = "\n".join(elementos)
-    else:
-        # Escapa apenas o texto que não é placeholder
-        texto = tf.escape_markdown_v2(texto)
-
-    # Log do texto após formatação MarkdownV2
-    logging.debug(f"Texto após formatação MarkdownV2: {texto}")
-
-    # Restaura marcadores MarkdownV2
-    for i, block in enumerate(markdown_blocks):
-        texto = texto.replace(f"__MARKDOWN_{i}__", block)
-
-    # Restaura blocos LaTeX
-    for i, block in enumerate(latex_blocks):
-        texto = texto.replace(f"__LATEX_{i}__", block)
-
-    # Log do texto final com Markdown e LaTeX restaurados
-    logging.debug(f"Texto final com Markdown e LaTeX restaurado: {texto}")
-
-    return texto
-
-def format_price(price: float) -> str:
-    return f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-create_table()
-
-# Handlers
 @bot.message_handler(func=lambda message: message.text is not None and
                     message.from_user.id != bot.get_me().id and
                     (bot.get_me().username in message.text or
@@ -412,8 +480,10 @@ def responder(message):
         logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
         return
 
+    # Constrói o histórico antes de atualizar o chat_memory
+    chat_history = get_chat_history(message, reply_limit=12)
     update_chat_memory(message)
-    chat_history = get_chat_history(message, reply_limit=6)
+
     system_prompt = get_prompt()
     user_id = message.from_user.id
 
@@ -421,7 +491,7 @@ def responder(message):
     if "manda" in text_lower and (r"\\" in message.text or "backslash" in text_lower):
         response_text = (
             r"Beleza, entendi! Vou usar `\` pra barras invertidas fora de blocos LaTeX, e `\` dentro de expressões matemáticas "
-            r"como $$  \sqrt{-1}  $$. Se precisar de algo específico, explica mais!"
+            r"como $$\sqrt{-1}$$. Se precisar de algo específico, explica mais!"
         )
         tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
         logging.info(f"Resposta enviada para @{username}: {response_text}")
@@ -436,8 +506,8 @@ def responder(message):
             "\\documentclass{article}\n"
             "\\usepackage{amsmath}\n\n"
             "\\begin{document}\n\n"
-            "A Fórmula de Euler é $$ e^{i\\pi} + 1 = 0 $$.\n\n"
-            "Em geral: $$ e^{i\\theta} = \\cos(\\theta) + i \\sin(\\theta) $$\n\n"
+            "A Fórmula de Euler é $$   e^{i\\pi} + 1 = 0   $$.\n\n"
+            "Em geral: $$   e^{i\\theta} = \\cos(\\theta) + i \\sin(\\theta)   $$\n\n"
             "\\end{document}\n"
             "```"
         )
@@ -447,10 +517,10 @@ def responder(message):
         return
 
     # Trata perguntas sobre imagens
-    if any(keyword in text_lower for keyword in ["quem são", "quem é", "o que é isso", "o que são"]) and chat_id in last_image_prompt:
+    if any(keyword in text_lower for keyword in ["quem são", "quem é", "o que é isso", "o que são", "prompt", "imagem", "último"]) and chat_id in last_image_prompt:
         response_text = tf.escape_markdown_v2(
-            f"Eu não vejo a imagem gerada, mas ela foi criada com base no prompt: '{last_image_prompt[chat_id]}'. "
-            "Quer que eu descreva algo específico sobre esse tema ou gere outra imagem?"
+            f"Você tá falando do último comando /imagem? O prompt foi '{last_image_prompt[chat_id]}'. "
+            "Quer que eu gere outra imagem com esse prompt ou explique algo sobre ela?"
         )
         tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
         logging.info(f"Resposta enviada para @{username}: {response_text}")
@@ -494,8 +564,8 @@ def responder(message):
         else:
             response_text = tf.escape_markdown_v2("Você ainda não me passou nenhuma info pra guardar, amigo!")
             tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-            logging.info(f"Resposta enviada para @{username}: {response_text}")
-            logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+            logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
+            logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
         return
 
     # Limpa infos
@@ -512,7 +582,7 @@ def responder(message):
         system_prompt += f"\nInformações que esse usuário me pediu pra guardar: {', '.join(stored_info[user_id])}"
     system_prompt += (
         r"\nQuando mencionar barras invertidas, use `\` para texto literal fora de LaTeX, "
-        r"e `\` dentro de blocos matemáticos como $$  \sqrt{-1}  $$"
+        r"e `\` dentro de blocos matemáticos como $$\sqrt{-1}$$"
     )
 
     messages = [{"role": "system", "content": system_prompt}] + chat_history
@@ -560,17 +630,24 @@ def responder(message):
                     time.sleep(2 ** attempt)
                     continue
                 raise
-
+    
         response_time = time.time() - start_time
         if not answer or len(answer) < 10:
             answer = "Opa, não consegui processar direito sua instrução. Tenta explicar de novo ou pedir algo diferente!"
             logging.debug(f"Resposta padrão usada para @{username}: {answer}")
-
+    
         # Formata a resposta
         mensagem = formatar_resposta_ia(answer)
         chat_memory[chat_id].append({"role": "assistant", "content": answer})
-
+    
+        # Verifica o limite de caracteres do Telegram
+        if len(mensagem) > TELEGRAM_MAX_CHARS:
+            logging.warning(f"Resposta excede o limite de caracteres do Telegram ({len(mensagem)} > {TELEGRAM_MAX_CHARS}) para @{username}")
+            mensagem = mensagem[:TELEGRAM_MAX_CHARS-50] + tf.escape_markdown_v2("... [Mensagem truncada devido ao limite de caracteres]")
+            logging.debug(f"Resposta truncada para @{username}: {mensagem}")
+    
         try:
+            # Tenta enviar como MarkdownV2
             if message.reply_to_message:
                 tf.send_markdown(bot, message.chat.id, mensagem, reply_to_message_id=message.message_id)
             else:
@@ -581,12 +658,29 @@ def responder(message):
             logging.error(f"[ERROR] Falha ao enviar com MarkdownV2 para @{username}: {str(e)}")
             logging.debug(f"Mensagem problemática para @{username}: {mensagem}")
             try:
+                # Fallback para HTML
+                html_text = answer
+                html_text = re.sub(r'\*\*([^\*]+)\*\*', r'<b>\1</b>', html_text)
+                html_text = re.sub(r'_([^_]+)_', r'<i>\1</i>', html_text)
+                html_text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html_text)
+                # Não escapa o HTML para preservar as tags
                 if message.reply_to_message:
-                    tf.send_html(bot, message.chat.id, tf.escape_html(answer), reply_to_message_id=message.message_id)
+                    bot.send_message(
+                        chat_id=message.chat.id,
+                        text=html_text,
+                        parse_mode='HTML',
+                        reply_to_message_id=message.message_id,
+                        disable_web_page_preview=False
+                    )
                 else:
-                    tf.send_html(bot, message.chat.id, tf.escape_html(answer))
-                logging.info(f"Resposta fallback enviada para @{username}: {answer}")
-                logging.debug(f"Resposta completa fallback enviada para @{username} (HTML): {answer}")
+                    bot.send_message(
+                        chat_id=message.chat.id,
+                        text=html_text,
+                        parse_mode='HTML',
+                        disable_web_page_preview=False
+                    )
+                logging.info(f"Resposta fallback enviada para @{username}: {html_text}")
+                logging.debug(f"Resposta completa fallback enviada para @{username} (HTML): {html_text}")
             except Exception as e2:
                 logging.error(f"[ERROR] Falha no fallback para @{username}: {str(e2)}")
                 response_text = tf.escape_markdown_v2("Deu uma zica aqui, brother! Tenta depois!")
@@ -615,7 +709,7 @@ def responder(message):
         tf.send_markdown(bot, message.chat.id, response_text)
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
-
+######################################################################
 @bot.message_handler(commands=['youtube'])
 def youtube_search_command(message):
     username = message.from_user.username or "Unknown"
@@ -624,8 +718,8 @@ def youtube_search_command(message):
 
     query = message.text.replace("/youtube", "", 1).strip()
     if not query:
-        response_text = tf.escape_html("Por favor, execute o /youtube com algum termo de busca")
-        tf.send_html(bot, message.chat.id, response_text)
+        response_text = tf.escape_markdown_v2("Por favor, execute o /youtube com algum termo de busca")
+        tf.send_markdown(bot, message.chat.id, response_text)
         logging.info(f"Resposta enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
         return
@@ -645,8 +739,8 @@ def youtube_search_command(message):
         items = data.get("items", [])
 
         if not items:
-            response_text = tf.escape_html("Não foram encontrados resultados para a sua pesquisa.")
-            tf.send_html(bot, message.chat.id, response_text)
+            response_text = tf.escape_markdown_v2("Não foram encontrados resultados para a sua pesquisa.")
+            tf.send_markdown(bot, message.chat.id, response_text)
             logging.info(f"Resposta enviada para @{username}: {response_text}")
             logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
             return
@@ -656,19 +750,21 @@ def youtube_search_command(message):
             title = item["snippet"].get("title", "").strip()
             vid = item["id"].get("videoId", "").strip()
             url = f"https://www.youtube.com/watch?v={vid}"
-            lines.append(f"{idx}. {tf.escape_html(title)} — {tf.link('Link', url)}")
+            # Usa MarkdownV2 pra links
+            lines.append(f"{idx}. {tf.escape_markdown_v2(title)} — [{tf.escape_markdown_v2('Link')}]({url})")
 
-        header = f"🔎 {tf.bold(tf.escape_html(f'Resultados do YouTube para “{query}”:'))}\n"
+        header = f"🔎 *{tf.escape_markdown_v2(f'Resultados do YouTube para “{query}”:')}*\n"
         full_text = header + "\n".join(lines)
-        tf.send_html(bot, message.chat.id, full_text)
+        tf.send_markdown(bot, message.chat.id, full_text)
         logging.info(f"Resposta enviada para @{username}: {full_text}")
         logging.debug(f"Resposta completa enviada para @{username}: {full_text}")
     except Exception as e:
         logging.error(f"[ERROR] Handler /youtube para @{username}: {e}", exc_info=True)
-        response_text = tf.escape_html("Ops, algo deu errado no /youtube. Tente novamente mais tarde.")
-        tf.send_html(bot, message.chat.id, response_text)
+        response_text = tf.escape_markdown_v2("Ops, algo deu errado no /youtube. Tente novamente mais tarde.")
+        tf.send_markdown(bot, message.chat.id, response_text)
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+
 
 @bot.message_handler(commands=['search'])
 def search_command(message):
@@ -678,8 +774,8 @@ def search_command(message):
 
     query = message.text.replace("/search", "", 1).strip()
     if not query:
-        response_text = tf.escape_html("Por favor, execute o /search com algum termo de busca")
-        tf.send_html(bot, message.chat.id, response_text)
+        response_text = tf.escape_markdown_v2("Por favor, execute o /search com algum termo de busca")
+        tf.send_markdown(bot, message.chat.id, response_text)
         logging.info(f"Resposta enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
         return
@@ -698,8 +794,8 @@ def search_command(message):
         results = data.get("items", [])
 
         if not results:
-            response_text = tf.escape_html("Não foram encontrados resultados para a sua pesquisa.")
-            tf.send_html(bot, message.chat.id, response_text)
+            response_text = tf.escape_markdown_v2("Não foram encontrados resultados para a sua pesquisa.")
+            tf.send_markdown(bot, message.chat.id, response_text)
             logging.info(f"Resposta enviada para @{username}: {response_text}")
             logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
             return
@@ -708,17 +804,18 @@ def search_command(message):
         for idx, item in enumerate(results[:5], start=1):
             title = item.get("title", "").strip()
             link = item.get("link", "").strip()
-            lines.append(f"{idx}. {tf.escape_html(title)} — {tf.link(tf.escape_html(link), link)}")
+            # Usa MarkdownV2 pra links
+            lines.append(f"{idx}. {tf.escape_markdown_v2(title)} — [{tf.escape_markdown_v2(link)}]({link})")
 
-        header = f"🔎 {tf.bold(tf.escape_html(f'Resultados da pesquisa para “{query}”:'))}\n"
+        header = f"🔎 *{tf.escape_markdown_v2(f'Resultados da pesquisa para “{query}”:')}*\n"
         full_text = header + "\n".join(lines)
-        tf.send_html(bot, message.chat.id, full_text)
+        tf.send_markdown(bot, message.chat.id, full_text)
         logging.info(f"Resposta enviada para @{username}: {full_text}")
         logging.debug(f"Resposta completa enviada para @{username}: {full_text}")
     except Exception as e:
         logging.error(f"[ERROR] Handler /search para @{username}: {e}", exc_info=True)
-        response_text = tf.escape_html("Ops, algo deu errado no /search. Tente novamente mais tarde.")
-        tf.send_html(bot, message.chat.id, response_text)
+        response_text = tf.escape_markdown_v2("Ops, algo deu errado no /search. Tente novamente mais tarde.")
+        tf.send_markdown(bot, message.chat.id, response_text)
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
@@ -1148,8 +1245,11 @@ def imagem_command(message):
         data = resp.json()
         image_url = data["data"][0]["url"]
     except Exception as e:
-        logging.error(f"[ERROR] Falha ao gerar imagem para @{username}: {str(e)}", exc_info=True)
-        response_text = tf.escape_html("❌ Não consegui gerar a imagem. Tente novamente mais tarde.")
+        error_detail = str(e)
+        if isinstance(e, requests.exceptions.RequestException):
+            error_detail = f"Erro na requisição à API da xAI: {str(e)}"
+        logging.error(f"[ERROR] Falha ao gerar imagem para @{username}: {error_detail}", exc_info=True)
+        response_text = tf.escape_html(f"❌ Não consegui gerar a imagem. Motivo: {error_detail}. Tente novamente mais tarde.")
         tf.send_html(bot, message.chat.id, response_text)
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
@@ -1174,8 +1274,11 @@ def imagem_command(message):
         logging.info(f"Imagem enviada para @{username} (prompt: {prompt})")
         logging.debug(f"Imagem completa enviada para @{username} (prompt: {prompt}, caption: {caption})")
     except Exception as e:
-        logging.error(f"[ERROR] Falha ao enviar imagem para @{username}: {str(e)}", exc_info=True)
-        response_text = tf.escape_html("❌ Erro ao enviar a imagem. Verifique a conexão ou tente novamente.")
+        error_detail = str(e)
+        if isinstance(e, requests.exceptions.RequestException):
+            error_detail = f"Erro ao enviar a imagem: {str(e)}"
+        logging.error(f"[ERROR] Falha ao enviar imagem para @{username}: {error_detail}", exc_info=True)
+        response_text = tf.escape_html(f"❌ Erro ao enviar a imagem. Motivo: {error_detail}. Verifique a conexão ou tente novamente.")
         tf.send_html(bot, message.chat.id, response_text)
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
