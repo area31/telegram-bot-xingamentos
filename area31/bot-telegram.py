@@ -313,20 +313,26 @@ def responder(message):
     logging.info(f"Mensagem recebida de @{username}: {message.text or '[No text]'}")
     logging.debug(f"Pergunta completa de @{username}: {message.text or '[No text]'}")
 
+    # Determine the target username for logging (for replies)
+    if message.reply_to_message and message.reply_to_message.from_user:
+        target_username = message.reply_to_message.from_user.username or "Unknown"
+    else:
+        target_username = username
+
     # Bloqueia chats privados e bots
     if message.chat.type == 'private' or message.from_user.is_bot:
         response_text = tf.escape_markdown_v2("Desculpe, só respondo em grupos e não a bots!")
         tf.send_markdown(bot, message.chat.id, response_text)
-        logging.info(f"Resposta enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+        logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
     # Verifica se tem texto
     if not message.text:
         response_text = tf.escape_markdown_v2("Desculpe, não posso processar mensagens sem texto! Tente enviar uma mensagem com texto.")
         tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-        logging.info(f"Resposta enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+        logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
     # Ignora mensagens curtas ou irrelevantes
@@ -334,8 +340,8 @@ def responder(message):
     if len(text_lower) < 5 or text_lower in ["ok", "sim", "não", "ta", "blz", "valeu"]:
         response_text = tf.escape_markdown_v2("Beleza, mas me dá mais contexto ou pergunta algo mais específico!")
         tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-        logging.info(f"Resposta enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+        logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
     # Rate limit
@@ -346,8 +352,8 @@ def responder(message):
     if request_count >= REQUEST_LIMIT:
         response_text = tf.escape_markdown_v2("Tô de boa, mas muito requisitado agora! Tenta de novo em uns segundos.")
         tf.send_markdown(bot, message.chat.id, response_text)
-        logging.info(f"Resposta enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+        logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
     request_count += 1
 
@@ -359,8 +365,8 @@ def responder(message):
             "Eu não vejo a imagem, mas posso descrever algo sobre esse tema ou responder algo mais específico se tu explicar melhor!"
         )
         tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-        logging.info(f"Resposta enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+        logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
     # Constrói o histórico antes de atualizar o chat_memory
@@ -377,8 +383,8 @@ def responder(message):
             r"como $$\sqrt{-1}$$. Se precisar de algo específico, explica mais!"
         )
         tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-        logging.info(f"Resposta enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+        logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
     # Trata pedidos de "code LaTeX do Telegram"
@@ -395,8 +401,8 @@ def responder(message):
             "```"
         )
         tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-        logging.info(f"Resposta enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+        logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
     # Trata perguntas sobre imagens
@@ -406,8 +412,8 @@ def responder(message):
             "Quer que eu gere outra imagem com esse prompt ou explique algo sobre ela?"
         )
         tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-        logging.info(f"Resposta enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+        logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
     # Armazena infos
@@ -417,22 +423,22 @@ def responder(message):
             if not info:
                 response_text = tf.escape_markdown_v2("Opa, amigo! Armazenar o quê? Me dá algo pra guardar!")
                 tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-                logging.info(f"Resposta enviada para @{username}: {response_text}")
-                logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+                logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+                logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
                 return
             if user_id not in stored_info:
                 stored_info[user_id] = []
             stored_info[user_id].append(info)
             response_text = tf.escape_markdown_v2("Beleza, guardei a info pra você!")
             tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-            logging.info(f"Resposta enviada para @{username}: {response_text}")
-            logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+            logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+            logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
             return
         except IndexError:
             response_text = tf.escape_markdown_v2("Opa, amigo! Armazenar o quê? Me dá algo pra guardar!")
             tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-            logging.info(f"Resposta enviada para @{username}: {response_text}")
-            logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+            logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+            logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
             return
 
     # Lista infos armazenadas
@@ -442,13 +448,13 @@ def responder(message):
             itens = [f"- {tf.escape_markdown_v2(info)}" for info in stored_info[user_id]]
             resposta = "\n".join([tf.bold_md("Informações armazenadas:")] + itens)
             tf.send_markdown(bot, message.chat.id, resposta, reply_to_message_id=message.message_id)
-            logging.info(f"Resposta enviada para @{username}: {resposta}")
-            logging.debug(f"Resposta completa enviada para @{username}: {resposta}")
+            logging.info(f"Resposta enviada para @{target_username}: {resposta}")
+            logging.debug(f"Resposta completa enviada para @{target_username}: {resposta}")
         else:
             response_text = tf.escape_markdown_v2("Você ainda não me passou nenhuma info pra guardar, amigo!")
             tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-            logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-            logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+            logging.info(f"Resposta de erro enviada para @{target_username}: {response_text}")
+            logging.debug(f"Resposta completa de erro enviada para @{target_username}: {response_text}")
         return
 
     # Limpa infos
@@ -456,8 +462,8 @@ def responder(message):
         clear_stored_info(user_id)
         response_text = tf.escape_markdown_v2("Feito, amigo! Tudo limpo, não guardei mais nada.")
         tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-        logging.info(f"Resposta enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+        logging.info(f"Resposta enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
     # Adiciona infos ao prompt
@@ -537,9 +543,11 @@ def responder(message):
                     chat_id=message.chat.id,
                     text=mensagem,
                     parse_mode='MarkdownV2',
-                    reply_to_message_id=message.message_id,
+                    reply_to_message_id=message.reply_to_message_id,
                     disable_web_page_preview=False
                 )
+                logging.info(f"Resposta enviada para @{target_username} (reply): {mensagem}")
+                logging.debug(f"Resposta completa enviada para @{target_username} (reply): {mensagem}")
             else:
                 bot.send_message(
                     chat_id=message.chat.id,
@@ -547,11 +555,11 @@ def responder(message):
                     parse_mode='MarkdownV2',
                     disable_web_page_preview=False
                 )
-            logging.info(f"Resposta enviada para @{username}: {mensagem}")
-            logging.debug(f"Resposta completa enviada para @{username} (MarkdownV2): {mensagem}")
+                logging.info(f"Resposta enviada para @{target_username}: {mensagem}")
+                logging.debug(f"Resposta completa enviada para @{target_username} (MarkdownV2): {mensagem}")
         except Exception as e:
-            logging.error(f"[ERROR] Falha ao enviar com MarkdownV2 para @{username}: {str(e)}")
-            logging.debug(f"Mensagem problemática para @{username}: {mensagem}")
+            logging.error(f"[ERROR] Falha ao enviar com MarkdownV2 para @{target_username}: {str(e)}")
+            logging.debug(f"Mensagem problemática para @{target_username}: {mensagem}")
             try:
                 # Fallback para HTML
                 html_text = to_html(answer)
@@ -560,9 +568,11 @@ def responder(message):
                         chat_id=message.chat.id,
                         text=html_text,
                         parse_mode='HTML',
-                        reply_to_message_id=message.message_id,
+                        reply_to_message_id=message.reply_to_message_id,
                         disable_web_page_preview=False
                     )
+                    logging.info(f"Resposta fallback enviada para @{target_username} (reply): {html_text}")
+                    logging.debug(f"Resposta completa fallback enviada para @{target_username} (reply, HTML): {html_text}")
                 else:
                     bot.send_message(
                         chat_id=message.chat.id,
@@ -570,36 +580,36 @@ def responder(message):
                         parse_mode='HTML',
                         disable_web_page_preview=False
                     )
-                logging.info(f"Resposta fallback enviada para @{username}: {html_text}")
-                logging.debug(f"Resposta completa fallback enviada para @{username} (HTML): {html_text}")
+                    logging.info(f"Resposta fallback enviada para @{target_username}: {html_text}")
+                    logging.debug(f"Resposta completa fallback enviada para @{target_username} (HTML): {html_text}")
             except Exception as e2:
-                logging.error(f"[ERROR] Falha no fallback para @{username}: {str(e2)}")
+                logging.error(f"[ERROR] Falha no fallback para @{target_username}: {str(e2)}")
                 response_text = tf.escape_markdown_v2("Deu uma zica aqui, brother! Tenta depois!")
                 tf.send_markdown(bot, message.chat.id, response_text)
-                logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-                logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+                logging.info(f"Resposta de erro enviada para @{target_username}: {response_text}")
+                logging.debug(f"Resposta completa de erro enviada para @{target_username}: {response_text}")
 
     except OpenAIError as e:
-        error_msg = f"[ERROR] Erro na API da OpenAI para @{username}: {str(e)}"
+        error_msg = f"[ERROR] Erro na API da OpenAI para @{target_username}: {str(e)}"
         logging.error(error_msg)
         response_text = tf.escape_markdown_v2("Ops, minha cabeça de IA deu tilt! Tenta de novo!")
         tf.send_markdown(bot, message.chat.id, response_text)
-        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+        logging.info(f"Resposta de erro enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa de erro enviada para @{target_username}: {response_text}")
     except requests.exceptions.RequestException as e:
-        error_msg = f"[ERROR] Erro na API da xAI para @{username}: {str(e)}"
+        error_msg = f"[ERROR] Erro na API da xAI para @{target_username}: {str(e)}"
         logging.error(error_msg)
         response_text = tf.escape_markdown_v2("Ops, deu problema com a xAI! Tenta de novo!")
         tf.send_markdown(bot, message.chat.id, response_text)
-        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+        logging.info(f"Resposta de erro enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa de erro enviada para @{target_username}: {response_text}")
     except Exception as e:
-        error_msg = f"[ERROR] Inesperado para @{username}: {str(e)}"
+        error_msg = f"[ERROR] Inesperado para @{target_username}: {str(e)}"
         logging.error(error_msg)
         response_text = tf.escape_markdown_v2("Deu uma zica aqui, brother! Tenta depois!")
         tf.send_markdown(bot, message.chat.id, response_text)
-        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+        logging.info(f"Resposta de erro enviada para @{target_username}: {response_text}")
+        logging.debug(f"Resposta completa de erro enviada para @{target_username}: {response_text}")
 
 # Outros handlers permanecem inalterados
 @bot.message_handler(commands=['youtube'])
@@ -842,17 +852,19 @@ def random_message(message):
         target_user = message.reply_to_message.from_user.username or "Unknown"
         response = frase_escolhida
         tf.send_markdown(bot, message.chat.id, response, reply_to_message_id=message.reply_to_message.message_id)
-        logging.info(f"Resposta enviada para @{username} (reply): {response}")
-        logging.debug(f"Resposta completa enviada para @{username} (reply): {response}")
+        logging.info(f"Resposta enviada para @{target_user} (reply): {response}")
+        logging.debug(f"Resposta completa enviada para @{target_user} (reply): {response}")
     else:
         command_parts = message.text.split(maxsplit=2)
         if len(command_parts) > 1 and command_parts[1].startswith('@'):
+            target_user = command_parts[1].lstrip('@') or "Unknown"
             response = f"{tf.escape_markdown_v2(command_parts[1])} {frase_escolhida}"
         else:
+            target_user = username
             response = frase_escolhida
         tf.send_markdown(bot, message.chat.id, response)
-        logging.info(f"Resposta enviada para @{username}: {response}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        logging.info(f"Resposta enviada para @{target_user}: {response}")
+        logging.debug(f"Resposta completa enviada para @{target_user}: {response}")
 
 @bot.message_handler(commands=['real'])
 def reais_message(message):
