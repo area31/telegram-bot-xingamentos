@@ -19,7 +19,7 @@ request_count = 0
 
 # Configuração do log
 logging.basicConfig(
-    filename='bot-telegram.log',
+    filename='/home/morfetico/alta-linguagem/bot-telegram.log',
     level=logging.INFO,
     format='%(asctime)s - %(message)s',
     filemode='a'
@@ -179,6 +179,47 @@ def get_random_frase() -> str:
         result = cursor.fetchone()
         return result[0] if result else None
 
+# Funções de memória de conversa
+def update_chat_memory(message):
+    chat_id = message.chat.id
+    if chat_id not in chat_memory:
+        chat_memory[chat_id] = []
+    
+    role = "user" if message.from_user.id != bot.get_me().id else "assistant"
+    chat_memory[chat_id].append({"role": role, "content": message.text})
+    
+    if len(chat_memory[chat_id]) > 10:
+        chat_memory[chat_id] = chat_memory[chat_id][-10:]
+
+def get_chat_history(message, reply_limit: int = 4) -> list:
+    chat_id = message.chat.id
+    history = []
+
+    if message.reply_to_message:
+        current_message = message
+        history.append({"role": "user", "content": current_message.text})
+        while current_message.reply_to_message and len(history) < reply_limit + 1:
+            previous_message = current_message.reply_to_message
+            role = "assistant" if previous_message.from_user.id == bot.get_me().id else "user"
+            history.append({"role": role, "content": previous_message.text})
+            current_message = previous_message
+        history.reverse()
+    else:
+        if chat_id in chat_memory:
+            history = chat_memory[chat_id].copy()
+
+    token_count = count_tokens(history)
+    while token_count > MAX_TOKENS * 0.7:
+        history.pop(0)
+        token_count = count_tokens(history)
+
+    return history
+
+def clear_stored_info(user_id):
+    if user_id in stored_info:
+        del stored_info[user_id]
+        logging.info(f"Informações armazenadas limpas para user_id {user_id}")
+
 create_table()
 
 # Configuração da OpenAI
@@ -194,7 +235,7 @@ XAI_API_KEY = config_xai['DEFAULT']['API_KEY']
 # Configuração do Bot (OpenAI ou xAI)
 config_bot = configparser.ConfigParser()
 config_bot.read('bot-telegram.cfg')
-BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'openai')  # Default para OpenAI
+BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'openai')
 XAI_MODEL = config_bot['DEFAULT'].get('XAI_MODEL', 'grok-2-latest')
 
 # Parâmetros gerais
@@ -238,10 +279,6 @@ def random_message(message):
 
     frase_escolhida = random.choice(frases)[0]
 
-#    if message.reply_to_message and hasattr(message.reply_to_message, 'from_user'):
-#        response = frase_escolhida
-#        logging.info(f"Resposta para @{username} (reply): {response}")
-#        bot.reply_to(message.reply_to_message, response)
     if message.reply_to_message and hasattr(message.reply_to_message, 'from_user'):
         target_user = message.reply_to_message.from_user.username or "Unknown"
         response = frase_escolhida
@@ -382,19 +419,19 @@ def responder(message):
             bot.send_message(message.chat.id, answer_escaped, parse_mode='MarkdownV2')
 
     except OpenAIError as e:
-        error_msg = f"[ERROR] Erro na API da OpenAI: {str(e)}"
+        error_msg = f"[ERROR] Erro na API da OpenAI para @{username}: {str(e)}"
         logging.error(error_msg)
         response_text = "Ops, minha cabeça de IA deu tilt! Tenta de novo!"
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
     except requests.exceptions.RequestException as e:
-        error_msg = f"[ERROR] Erro na API da xAI: {str(e)}"
+        error_msg = f"[ERROR] Erro na API da xAI para @{username}: {str(e)}"
         logging.error(error_msg)
         response_text = "Ops, deu problema com a xAI! Tenta de novo!"
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
     except Exception as e:
-        error_msg = f"[ERROR] Inesperado: {str(e)}"
+        error_msg = f"[ERROR] Inesperado para @{username}: {str(e)}"
         logging.error(error_msg)
         response_text = "Deu uma zica aqui, brother! Tenta depois!"
         logging.info(f"Resposta para @{username}: {response_text}")
@@ -438,13 +475,13 @@ def youtube_search_command(message):
         bot.send_message(chat_id=message.chat.id, text=resposta.strip())
 
     except requests.exceptions.RequestException as e:
-        error_msg = f"[ERROR] YouTube API: {str(e)}"
+        error_msg = f"[ERROR] YouTube API para @{username}: {str(e)}"
         logging.error(error_msg)
         response_text = "Erro ao acessar a API do YouTube."
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(chat_id=message.chat.id, text=response_text)
     except Exception as e:
-        error_msg = f"[ERROR] Inesperado /youtube: {str(e)}"
+        error_msg = f"[ERROR] Inesperado /youtube para @{username}: {str(e)}"
         logging.error(error_msg)
         response_text = "Erro inesperado ao buscar no YouTube."
         logging.info(f"Resposta para @{username}: {response_text}")
@@ -480,7 +517,7 @@ def search_command(message):
         logging.info(f"Resposta para @{username}: {response}")
         bot.send_message(chat_id=message.chat.id, text=response)
     except (requests.exceptions.RequestException, KeyError) as e:
-        error_msg = f"[ERROR] Google API: {str(e)}"
+        error_msg = f"[ERROR] Google API para @{username}: {str(e)}"
         logging.error(error_msg)
         response = "Desculpe, ocorreu um erro ao acessar a API do Google. Por favor, tente novamente mais tarde."
         logging.info(f"Resposta para @{username}: {response}")
@@ -510,7 +547,7 @@ def euro_message(message):
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(message.chat.id, response_text)
     except (requests.exceptions.RequestException, KeyError, ValueError) as e:
-        error_msg = f"[ERROR] Euro API: {str(e)}"
+        error_msg = f"[ERROR] Euro API para @{username}: {str(e)}"
         logging.error(error_msg)
         response_text = "Erro ao consultar a cotação do euro. Tente novamente!"
         logging.info(f"Resposta para @{username}: {response_text}")
@@ -531,7 +568,7 @@ def dolar_message(message):
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(message.chat.id, response_text)
     except (requests.exceptions.RequestException, KeyError, ValueError) as e:
-        error_msg = f"[ERROR] Dolar API: {str(e)}"
+        error_msg = f"[ERROR] Dolar API para @{username}: {str(e)}"
         logging.error(error_msg)
         response_text = "Erro ao consultar a cotação do dólar. Tente novamente!"
         logging.info(f"Resposta para @{username}: {response_text}")
@@ -833,5 +870,9 @@ def responder_imagem(message):
 def handle_imagem(message):
     responder_imagem(message)
 
-# Inicia o bot
-bot.polling()
+# Inicia o bot com captura de erros globais
+try:
+    bot.polling()
+except Exception as e:
+    logging.error(f"[ERROR] Falha crítica no polling: {str(e)}")
+    raise
