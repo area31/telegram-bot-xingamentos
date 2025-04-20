@@ -5,69 +5,154 @@ import random
 import sqlite3
 import requests
 import sys
+import re
+import logging
+import logging.handlers
+import urllib.parse
 from typing import Tuple, Optional
+
+# Adiciona o caminho pras bibliotecas locais, caso tu tenha instalado algo fora do padrão
 sys.path.append('/home/morfetico/.local/lib/python3.12/site-packages/')
 import telebot
 import shutil
 import openai
 from openai import OpenAIError
-import logging
-import urllib.parse
 
+# Variáveis globais pra controlar o rate limit de requisições
 start_time = time.time()
 request_count = 0
 
-# Configuração do log
-logging.basicConfig(
-    filename='bot-telegram.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(message)s',
-    filemode='a'
-)
-logging.info("Bot iniciado.")
+# Configuração do logging - aqui é onde a mágica dos logs acontece!
+# Primeiro, criamos um logger temporário pra capturar qualquer problema na inicialização
+temp_logger = logging.getLogger('temp_init')
+temp_handler = logging.FileHandler('bot-telegram.log', mode='a')  # Modo 'a' pra appending
+temp_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+temp_logger.addHandler(temp_handler)
+temp_logger.setLevel(logging.DEBUG)
+temp_logger.debug("Iniciando configuração do logging - se tu tá vendo isso, o log tá funcionando!")
 
-# Rate limit
+# Filtro pra esconder tokens sensíveis (tipo o do Telegram) no log
+class TokenObfuscationFilter(logging.Filter):
+    def __init__(self):
+        super().__init__()
+        # Regex pra pegar tokens do Telegram (formato: <bot_id>:<token>)
+        self.token_pattern = r'\b\d{8,10}:[A-Za-z0-9_-]{35}\b'
+
+    def filter(self, record):
+        try:
+            # Pega a mensagem do log
+            msg = record.getMessage()
+            # Troca qualquer token por '****:****' pra não vazar
+            record.msg = re.sub(self.token_pattern, '****:****', msg)
+            # Se tiver argumentos no log, mascara eles também
+            if hasattr(record, 'args') and record.args:
+                record.args = tuple(
+                    re.sub(self.token_pattern, '****:****', str(arg))
+                    if isinstance(arg, str) else arg
+                    for arg in record.args
+                )
+            return True
+        except Exception as e:
+            # Se der zica no filtro, loga o erro mas deixa o log passar
+            temp_logger.error(f"Erro no TokenObfuscationFilter: {str(e)}")
+            return True
+
+# Configuração do log principal - aqui é onde definimos como o bot vai logar tudo
+try:
+    # Verifica se o arquivo de log existe e seta permissões pra escrita
+    log_file = 'bot-telegram.log'
+    if not os.path.exists(log_file):
+        with open(log_file, 'a'):
+            os.chmod(log_file, 0o666)  # Permissão pra todo mundo escrever, só pra garantir
+    else:
+        os.chmod(log_file, 0o666)
+
+    # Lê o bot-telegram.cfg, ignorando linhas com # ou ;
+    config_bot = configparser.ConfigParser(comment_prefixes=('#', ';'))
+    config_bot.optionxform = str  # Mantém maiúsculas/minúsculas nas chaves
+    if not config_bot.read('bot-telegram.cfg'):
+        temp_logger.error("Erro: Não conseguiu ler o bot-telegram.cfg! Usando LOG_LEVEL=INFO como padrão.")
+        LOG_LEVEL = 'INFO'
+    else:
+        LOG_LEVEL = config_bot['DEFAULT'].get('LOG_LEVEL', 'INFO').upper()
+        temp_logger.debug(f"Configuração lida do bot-telegram.cfg: LOG_LEVEL={LOG_LEVEL}, BOT_AI={config_bot['DEFAULT'].get('BOT_AI', 'xai')}, XAI_MODEL={config_bot['DEFAULT'].get('XAI_MODEL', 'grok-3-mini-fast-beta')}")
+
+    # Valida o LOG_LEVEL pra não dar zica
+    valid_log_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+    if LOG_LEVEL not in valid_log_levels:
+        temp_logger.error(f"LOG_LEVEL inválido: {LOG_LEVEL}. Usando INFO como padrão.")
+        LOG_LEVEL = 'INFO'
+
+    # Cria um logger específico pro bot, pra não misturar com logs de outras bibliotecas
+    logger = logging.getLogger('telegram_bot')
+    logger.setLevel(getattr(logging, LOG_LEVEL))
+
+    # Limpa qualquer handler do logger raiz pra evitar conflitos (tipo com telebot)
+    logging.getLogger('').handlers = []
+
+    # Configura o handler pro arquivo de log
+    handler = logging.FileHandler(log_file, mode='a')
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    handler.addFilter(TokenObfuscationFilter())
+    handler.setLevel(getattr(logging, LOG_LEVEL))
+    logger.addHandler(handler)
+
+    # Tira o handler temporário, agora que o logger principal tá de pé
+    temp_logger.removeHandler(temp_handler)
+    temp_handler.close()
+
+    logger.info("Bot iniciado - pronto pra zuar e logar tudo direitinho!")
+except Exception as e:
+    temp_logger.error(f"Erro na configuração do logging: {str(e)}")
+    raise
+
+# Substitui o logging padrão pelo nosso logger, pra todas as chamadas usarem telegram_bot
+logging = logger
+
+# Configuração do rate limit - pra não sobrecarregar a API
 REQUEST_LIMIT = 40
 TIME_WINDOW = 60
 request_count = 0
 start_time = time.time()
 
-# Configuração do Telegram
+# Configuração do Telegram - lê o token do bot
 config_telegram = configparser.ConfigParser()
 config_telegram.read('token-telegram.cfg')
 TOKEN = config_telegram['DEFAULT']['TOKEN']
 bot = telebot.TeleBot(TOKEN)
+logging.debug("Token do Telegram lido com sucesso (mascarado no log, claro!)")
 
-# Configuração da CoinCap API v3
+# Configuração da CoinCap API - pra cotações de cripto
 config_coincap = configparser.ConfigParser()
 config_coincap.read('token-coincap.cfg')
 COINCAP_API_KEY = config_coincap['DEFAULT']['TOKEN']
+logging.debug("Token da CoinCap API lido com sucesso")
 
-# Limite de caracteres do Telegram
+# Limite de caracteres do Telegram - pra não estourar nas mensagens
 TELEGRAM_MAX_CHARS = 4096
 
-# Ajustes de formatação do Telegram
+# Função pra escapar caracteres especiais pro MarkdownV2 do Telegram
 def escape_markdown_v2(text):
+    r"""
+    Escapa caracteres reservados pro Telegram MarkdownV2, mas preserva blocos de código e LaTeX.
+    Suporta \( ... \), \[ ... \], $$ ... $$, e trata \ como literal fora de blocos matemáticos.
+    Simplificado pra evitar erros com blocos LaTeX.
     """
-    Escapa caracteres reservados para Telegram MarkdownV2, preservando blocos de código e expressões matemáticas.
-    """
-    # Lista completa de caracteres reservados em MarkdownV2 conforme documentação do Telegram
-    reserved_chars = r"_*[]()~`>#+-=|{}.!"
-
+    reserved_chars = "_*[]()~`>#+-=|{}.!"  # Caracteres que o Telegram exige escapar
     result = ""
     i = 0
     length = len(text)
     code_block_open = False
     inline_code_open = False
-    math_block_open = False
+    math_inline_open = False
+    math_display_open = False
 
     while i < length:
-        # Verifica blocos de código com ```
+        # Blocos de código com ```
         if i + 2 < length and text[i:i+3] == "```":
             code_block_open = not code_block_open
             result += "```"
             i += 3
-            # Pula até o fim da linha para preservar linguagem (se houver)
             while i < length and text[i] != "\n":
                 result += text[i]
                 i += 1
@@ -76,52 +161,74 @@ def escape_markdown_v2(text):
                 i += 1
             continue
 
-        # Verifica código inline com `
+        # Código inline com `
         if text[i] == "`" and not code_block_open:
             inline_code_open = not inline_code_open
             result += "`"
             i += 1
             continue
 
-        # Verifica expressões matemáticas com \( ... \)
-        if i + 1 < length and text[i:i+2] == r"\(" and not (code_block_open or inline_code_open):
-            math_block_open = True
+        # Expressões matemáticas inline com $$  ...  $$
+        if i + 1 < length and text[i:i+2] == r"$$ " and not (code_block_open or inline_code_open):
+            math_inline_open = True
             result += r"\("
             i += 2
             continue
-        if i + 1 < length and text[i:i+2] == r"\)" and not (code_block_open or inline_code_open) and math_block_open:
-            math_block_open = False
+        if i + 1 < length and text[i:i+2] == r" $$" and not (code_block_open or inline_code_open) and math_inline_open:
+            math_inline_open = False
             result += r"\)"
             i += 2
             continue
 
-        # Escapa caracteres reservados fora de blocos de código, código inline ou expressões matemáticas
-        if text[i] in reserved_chars and not (code_block_open or inline_code_open or math_block_open):
+        # Expressões matemáticas display com $$   ...   $$
+        if i + 1 < length and text[i:i+2] == "$$  " and not (code_block_open or inline_code_open):
+            math_display_open = not math_display_open
+            result += "  $$"
+            i += 2
+            continue
+
+        # Trata barras invertidas (\ vira \\) fora de blocos matemáticos/código
+        if text[i] == "\\" and not (code_block_open or inline_code_open or math_inline_open or math_display_open):
+            result += r"\\"
+            i += 1
+            continue
+
+        # Escapa caracteres reservados fora de blocos protegidos
+        if text[i] in reserved_chars and not (code_block_open or inline_code_open or math_inline_open or math_display_open):
             result += "\\" + text[i]
         else:
             result += text[i]
         i += 1
 
-    # Garante que blocos de código ou expressões matemáticas abertas sejam fechados
+    # Fecha blocos que ficaram abertos
     if code_block_open:
         result += "```"
-    if math_block_open:
+    if math_inline_open:
         result += r"\)"
+    if math_display_open:
+        result += "$$"
 
-    # Limita o tamanho da resposta para o máximo permitido pelo Telegram
+    # Corta a mensagem se passar do limite do Telegram
     if len(result) > TELEGRAM_MAX_CHARS:
         result = result[:TELEGRAM_MAX_CHARS - 3] + "..."
         if code_block_open:
             result += "```"
-        if math_block_open:
+        if math_inline_open:
             result += r"\)"
+        if math_display_open:
+            result += "$$  "
 
+    logging.debug(f"Texto escapado para MarkdownV2: {result[:100]}...")
     return result if result else "Erro ao processar formatação, tente novamente."
-# Armazenamento em memória
+
+# Armazenamento em memória - pra guardar infos dos usuários e histórico de chat
 stored_info = {}
 chat_memory = {}
+last_image_prompt = {}  # Guarda o último prompt de imagem por chat_id
 
+# Funções pra gerenciar o banco de dados de frases (xingamentos)
 def create_table():
+    """Cria a tabela de frases no SQLite, se não existir."""
     with sqlite3.connect('frases.db') as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -130,33 +237,41 @@ def create_table():
             frase TEXT NOT NULL
         );
         """)
+    logging.debug("Tabela de frases criada ou verificada no banco frases.db")
 
 def insert_frase(frase: str):
+    """Insere uma nova frase no banco."""
     with sqlite3.connect('frases.db') as conn:
         cursor = conn.cursor()
         cursor.execute("INSERT INTO frases (frase) VALUES (?)", (frase,))
+    logging.debug(f"Frase inserida no banco: {frase}")
 
 def get_random_frase() -> str:
+    """Pega uma frase aleatória do banco."""
     with sqlite3.connect('frases.db') as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT frase FROM frases ORDER BY RANDOM() LIMIT 1")
         result = cursor.fetchone()
         return result[0] if result else None
+    logging.debug("Frase aleatória buscada no banco")
 
-# Funções de memória de conversa
+# Funções pra gerenciar memória de conversa
 def update_chat_memory(message):
+    """Atualiza o histórico de conversa, mantendo até 10 mensagens."""
     chat_id = message.chat.id
     if chat_id not in chat_memory:
         chat_memory[chat_id] = []
-    
+
     role = "user" if message.from_user.id != bot.get_me().id else "assistant"
     content = message.text or message.caption or "[Imagem]"
     chat_memory[chat_id].append({"role": role, "content": content})
-    
+
     if len(chat_memory[chat_id]) > 10:
         chat_memory[chat_id] = chat_memory[chat_id][-10:]
+    logging.debug(f"Memória de chat atualizada para chat_id {chat_id}")
 
-def get_chat_history(message, reply_limit: int = 4) -> list:
+def get_chat_history(message, reply_limit: int = 6) -> list:
+    """Pega o histórico de conversa, incluindo respostas encadeadas."""
     chat_id = message.chat.id
     history = []
 
@@ -176,59 +291,73 @@ def get_chat_history(message, reply_limit: int = 4) -> list:
             history = chat_memory[chat_id].copy()
 
     token_count = count_tokens(history)
-    while token_count > MAX_TOKENS * 0.7:
+    while token_count > MAX_TOKENS * 0.8:  # Aumenta o limite de tokens
         history.pop(0)
         token_count = count_tokens(history)
 
+    logging.debug(f"Histórico de chat obtido para chat_id {chat_id}: {len(history)} mensagens")
     return history
 
 def clear_stored_info(user_id):
+    """Limpa as infos armazenadas de um usuário."""
     if user_id in stored_info:
         del stored_info[user_id]
         logging.info(f"Informações armazenadas limpas para user_id {user_id}")
 
+# Cria a tabela de frases no banco ao iniciar
 create_table()
 
-# Configuração da OpenAI
+# Configuração da OpenAI - pra usar o ChatGPT se configurado
 config_openai = configparser.ConfigParser()
 config_openai.read('token-openai.cfg')
 OPENAI_API_KEY = config_openai['DEFAULT']['API_KEY']
+logging.debug("Token da OpenAI lido com sucesso")
 
-# Configuração da xAI
+# Configuração da xAI - pra usar o Grok
 config_xai = configparser.ConfigParser()
 config_xai.read('token-xai.cfg')
 XAI_API_KEY = config_xai['DEFAULT']['API_KEY']
+logging.debug("Token da xAI lido com sucesso")
 
-# Configuração do Bot (OpenAI ou xAI)
-config_bot = configparser.ConfigParser()
-config_bot.read('bot-telegram.cfg')
+# Configuração do bot - define se usa OpenAI ou xAI
 BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'openai')
 XAI_MODEL = config_bot['DEFAULT'].get('XAI_MODEL', 'grok-2-latest')
+logging.debug(f"Configuração do bot: BOT_AI={BOT_AI}, XAI_MODEL={XAI_MODEL}")
 
-# Parâmetros gerais
-MAX_TOKENS = 1000
-TEMPERATURE = 0.8
-OPENAI_MODEL = "gpt-4"
+# Parâmetros gerais pra IA
+MAX_TOKENS = 1000  # Limite de tokens pra respostas
+TEMPERATURE = 0.8  # Controla a criatividade da IA
+OPENAI_MODEL = "gpt-4"  # Modelo padrão do OpenAI
 
 def count_tokens(messages):
+    """Conta tokens pras mensagens, pra não estourar o limite."""
     total_tokens = 0
     for msg in messages:
         content = msg["content"] or "[Imagem]"
         total_tokens += len(content.split()) + 10
+    logging.debug(f"Contagem de tokens: {total_tokens}")
     return total_tokens
 
 def get_prompt() -> str:
+    r"""Lê o prompt base do prompt.cfg ou usa um padrão."""
     try:
         with open('prompt.cfg', 'r', encoding='utf-8') as arquivo:
             base_prompt = arquivo.read().strip()
+            logging.debug("Prompt lido do prompt.cfg")
     except FileNotFoundError:
-        base_prompt = ("Você é um assistente útil e espirituoso em um bot do Telegram. "
-                       "Responda de forma natural, como um amigo conversando, mantendo o contexto da conversa. "
+        base_prompt = ("Você é um assistente útil e respeitoso em um bot do Telegram. "
+                       "Responda de forma clara, amigável e profissional, mantendo o contexto da conversa. "
+                       "Evite respostas ofensivas ou inadequadas. "
+                       "Se a mensagem for curta (menos de 15 caracteres) ou vaga, peça mais detalhes com base no histórico da conversa. "
                        "Quando o usuário pedir para 'armazenar a info', guarde a informação em uma lista associada ao ID do usuário. "
-                       "Quando perguntado 'quais são as infos que te pedi pra armazenar?', responda com a lista de informações armazenadas.")
+                       "Quando perguntado 'quais são as infos que te pedi pra armazenar?', responda com a lista de informações armazenadas. "
+                       "Se o usuário pedir LaTeX, use o formato de blocos matemáticos do Telegram (  $$ ... $$   para display, \\( ... \\) para inline). "
+                       "Se pedir 'code LaTeX do Telegram', retorne o código LaTeX puro dentro de um bloco de código ```latex ... ```. "
+                       "Se a pergunta for sobre uma imagem gerada (ex.: 'quem são esses?'), explique que você não vê a imagem, mas pode descrever o que tentou gerar com base no prompt de texto fornecido.")
+        logging.warning("prompt.cfg não encontrado, usando prompt padrão")
     return f"{base_prompt}\n\nSua resposta deve ter no máximo 4000 caracteres para caber no limite do Telegram (4096 caracteres, incluindo formatação). Se necessário, resuma ou ajuste o conteúdo para não ultrapassar esse limite."
 
-# Xingamentos
+# Handler pro comando /xinga - manda um xingamento aleatório
 @bot.message_handler(commands=['xinga'])
 def random_message(message):
     username = message.from_user.username or "Unknown"
@@ -261,7 +390,7 @@ def random_message(message):
         logging.info(f"Resposta para @{username}: {response}")
         bot.send_message(message.chat.id, response)
 
-# ChatGPT/xAI
+# Handler principal pra conversar com a IA
 @bot.message_handler(func=lambda message: message.text is not None and
                     message.from_user.id != bot.get_me().id and
                     (bot.get_me().username in message.text or
@@ -272,18 +401,29 @@ def responder(message):
     username = message.from_user.username or "Unknown"
     logging.info(f"Mensagem recebida de @{username}: {message.text or '[No text]'}")
 
+    # Bloqueia chats privados e bots
     if message.chat.type == 'private' or message.from_user.is_bot:
         response_text = "Desculpe, só respondo em grupos e não a bots!"
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         return
 
+    # Verifica se tem texto na mensagem
     if not message.text:
         response_text = "Desculpe, não posso processar mensagens sem texto! Tente enviar uma mensagem com texto."
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         return
 
+    # Ignora mensagens muito curtas ou irrelevantes
+    text_lower = message.text.lower().strip()
+    if len(text_lower) < 5 or text_lower in ["ok", "sim", "não", "ta", "blz", "valeu"]:
+        response_text = "Beleza, mas me dá mais contexto ou pergunta algo mais específico!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
+        return
+
+    # Rate limit pra não fritar a API
     current_time = time.time()
     if current_time - start_time > TIME_WINDOW:
         start_time = current_time
@@ -295,13 +435,41 @@ def responder(message):
         return
     request_count += 1
 
+    # Verifica se é uma mensagem curta após uma imagem
+    chat_id = message.chat.id
+    if len(text_lower) < 15 and chat_id in last_image_prompt:
+        response_text = f"Sua mensagem tá meio curta! Você tá falando da imagem gerada com o prompt '{last_image_prompt[chat_id]}'? Eu não vejo a imagem, mas posso descreva algo sobre esse tema ou responder algo mais específico se tu explicar melhor!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
+        return
+
     update_chat_memory(message)
-    chat_history = get_chat_history(message, reply_limit=4)
+    chat_history = get_chat_history(message, reply_limit=6)
     system_prompt = get_prompt()
     user_id = message.from_user.id
 
-    text_lower = message.text.lower()
+    # Trata pedidos específicos sobre barras invertidas
+    if "manda" in text_lower and (r"\\" in message.text or "backslash" in text_lower):
+        response_text = r"Beleza, entendi! Vou usar `\` pra barras invertidas fora de blocos LaTeX, e `\` dentro de expressões matemáticas como `$$\sqrt{-1}$$`. Se precisar de algo específico, explica mais!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
+        return
 
+    # Trata pedidos de "code LaTeX do Telegram"
+    if "code latex" in text_lower and "telegram" in text_lower:
+        response_text = r"```latex\n% Fórmula de Euler\n\documentclass{article}\n\usepackage{amsmath}\n\n\begin{document}\n\nA Fórmula de Euler é \\[ e^{i\pi} + 1 = 0 \\].\n\nEm geral: \\[ e^{i\theta} = \cos(\theta) + i \sin(\theta) \\]\n\n\end{document}\n```"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.reply_to(message, response_text, parse_mode='MarkdownV2')
+        return
+
+    # Trata perguntas sobre imagens geradas
+    if any(keyword in text_lower for keyword in ["quem são", "quem é", "o que é isso", "o que são"]) and chat_id in last_image_prompt:
+        response_text = f"Eu não vejo a imagem gerada, mas ela foi criada com base no prompt: '{last_image_prompt[chat_id]}'. Quer que eu descreva algo específico sobre esse tema ou gere outra imagem?"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
+        return
+
+    # Armazena infos do usuário
     if "armazene" in text_lower and ("info" in text_lower or "armazene" in text_lower.split()):
         try:
             info = message.text.split("armazene", 1)[1].replace("a info:", "").strip()
@@ -324,6 +492,7 @@ def responder(message):
             bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
             return
 
+    # Lista infos armazenadas
     if "quais são as infos que te pedi pra armazenar?" in text_lower or \
        "me diga o que pedi pra armazenar" in text_lower:
         if user_id in stored_info and stored_info[user_id]:
@@ -334,6 +503,7 @@ def responder(message):
         bot.reply_to(message, escape_markdown_v2(resposta), parse_mode='MarkdownV2')
         return
 
+    # Limpa infos armazenadas
     if "limpe tudo que armazenou" in text_lower:
         clear_stored_info(user_id)
         response_text = "Feito, amigo! Tudo limpo, não guardei mais nada."
@@ -341,56 +511,105 @@ def responder(message):
         bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         return
 
+    # Adiciona infos armazenadas ao prompt, se existirem
     if user_id in stored_info:
         system_prompt += f"\nInformações que esse usuário me pediu pra guardar: {', '.join(stored_info[user_id])}"
+    # Contexto pra barras invertidas
+    system_prompt += r"\nQuando mencionar barras invertidas, use `\` para texto literal fora de LaTeX, e `\` dentro de blocos matemáticos como `$$\sqrt{-1}$$`."
 
     messages = [{"role": "system", "content": system_prompt}] + chat_history
 
     try:
         start_time = time.time()
-
-        if BOT_AI.lower() == "openai":
-            openai.api_key = OPENAI_API_KEY
-            response = openai.ChatCompletion.create(
-                model=OPENAI_MODEL,
-                messages=messages,
-                max_tokens=MAX_TOKENS,
-                temperature=TEMPERATURE,
-                top_p=0.9,
-                frequency_penalty=0.0,
-                presence_penalty=0.2
-            )
-            answer = response.choices[0].message['content'].strip()
-        elif BOT_AI.lower() == "xai":
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {XAI_API_KEY}"
-            }
-            payload = {
-                "messages": messages,
-                "model": XAI_MODEL,
-                "stream": False,
-                "temperature": TEMPERATURE,
-                "max_tokens": MAX_TOKENS
-            }
-            response = requests.post("https://api.x.ai/v1/chat/completions", headers=headers, json=payload)
-            response.raise_for_status()
-            answer = response.json()["choices"][0]["message"]["content"].strip()
-        else:
-            raise ValueError(f"Configuração inválida para BOT_AI: {BOT_AI}. Use 'openai' ou 'xai'.")
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Chama a API configurada (OpenAI ou xAI)
+                if BOT_AI.lower() == "openai":
+                    openai.api_key = OPENAI_API_KEY
+                    response = openai.ChatCompletion.create(
+                        model=OPENAI_MODEL,
+                        messages=messages,
+                        max_tokens=MAX_TOKENS,
+                        temperature=TEMPERATURE,
+                        top_p=0.9,
+                        frequency_penalty=0.0,
+                        presence_penalty=0.2
+                    )
+                    answer = response.choices[0].message['content'].strip()
+                    logging.debug("Resposta gerada pela OpenAI")
+                elif BOT_AI.lower() == "xai":
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {XAI_API_KEY}"
+                    }
+                    payload = {
+                        "messages": messages,
+                        "model": XAI_MODEL,
+                        "stream": False,
+                        "temperature": TEMPERATURE,
+                        "max_tokens": MAX_TOKENS
+                    }
+                    response = requests.post("https://api.x.ai/v1/chat/completions", headers=headers, json=payload)
+                    response.raise_for_status()
+                    answer = response.json()["choices"][0]["message"]["content"].strip()
+                    logging.debug("Resposta gerada pela xAI")
+                else:
+                    raise ValueError(f"Configuração inválida para BOT_AI: {BOT_AI}. Use 'openai' ou 'xai'.")
+                break  # Sai do loop se a requisição der certo
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    logging.warning(f"Tentativa {attempt + 1} falhou com erro: {str(e)}. Tentando novamente...")
+                    time.sleep(2 ** attempt)  # Backoff exponencial
+                    continue
+                raise  # Levanta o erro na última tentativa
 
         response_time = time.time() - start_time
-        if not answer or len(answer) < 3:
-            answer = "Poxa, me deu um branco agora... deixa eu pensar melhor!"
-        logging.info(f"Resposta gerada em {response_time:.2f}s usando {BOT_AI} para @{username}: {answer}")
+        if not answer or len(answer) < 10:
+            logging.warning(f"Resposta inválida da API para @{username}: {answer}")
+            answer = "Opa, não consegui processar direito sua instrução. Tenta explicar de novo ou pedir algo diferente!"
 
-        chat_memory[message.chat.id].append({"role": "assistant", "content": answer})
+        logging.info(f"Resposta gerada em {response_time:.2f}s usando {BOT_AI} para @{username}: {answer[:100]}...")
+
+        chat_memory[chat_id].append({"role": "assistant", "content": answer})
         answer_escaped = escape_markdown_v2(answer)
+        logging.debug(f"Texto antes do escape para @{username}: {answer[:100]}...")
+        logging.debug(f"Texto após escape para @{username}: {answer_escaped[:100]}...")
 
-        if message.reply_to_message:
-            bot.reply_to(message, answer_escaped, parse_mode='MarkdownV2')
-        else:
-            bot.send_message(message.chat.id, answer_escaped, parse_mode='MarkdownV2')
+        # Tenta enviar a resposta com MarkdownV2
+        try:
+            if message.reply_to_message:
+                bot.reply_to(message, answer_escaped, parse_mode='MarkdownV2')
+            else:
+                bot.send_message(message.chat.id, answer_escaped, parse_mode='MarkdownV2')
+        except Exception as e:
+            error_msg = f"[ERROR] Falha ao enviar com MarkdownV2 para @{username}: {str(e)}"
+            logging.error(error_msg)
+            # Fallback: tenta sem LaTeX
+            try:
+                simplified_answer = answer.replace(r'\[', '').replace(r' $$', '').replace(r'$$ ', '').replace(r' $$', '').replace(' \]', '')
+                simplified_escaped = escape_markdown_v2(simplified_answer)
+                if message.reply_to_message:
+                    bot.reply_to(message, simplified_escaped, parse_mode='MarkdownV2')
+                else:
+                    bot.send_message(message.chat.id, simplified_escaped, parse_mode='MarkdownV2')
+                logging.info(f"Resposta enviada com MarkdownV2 simplificado para @{username}: {simplified_answer[:100]}...")
+            except Exception as e2:
+                # Último fallback: envia sem formatação
+                error_msg = f"[ERROR] Falha no fallback MarkdownV2 para @{username}: {str(e2)}"
+                logging.error(error_msg)
+                try:
+                    if message.reply_to_message:
+                        bot.reply_to(message, answer, parse_mode=None)
+                    else:
+                        bot.send_message(message.chat.id, answer, parse_mode=None)
+                    logging.info(f"Resposta enviada sem formatação para @{username}: {answer[:100]}...")
+                except Exception as e3:
+                    error_msg = f"[ERROR] Falha no fallback final para @{username}: {str(e3)}"
+                    logging.error(error_msg)
+                    response_text = "Deu uma zica aqui, brother! Tenta depois!"
+                    bot.send_message(message.chat.id, response_text)
+                    logging.info(f"Resposta para @{username}: {response_text}")
 
     except OpenAIError as e:
         error_msg = f"[ERROR] Erro na API da OpenAI para @{username}: {str(e)}"
@@ -411,7 +630,7 @@ def responder(message):
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
 
-# Busca no YouTube
+# Handler pra busca no YouTube
 @bot.message_handler(commands=['youtube'])
 def youtube_search_command(message):
     username = message.from_user.username or "Unknown"
@@ -461,7 +680,7 @@ def youtube_search_command(message):
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(chat_id=message.chat.id, text=response_text)
 
-# Busca no Google
+# Handler pra busca no Google
 @bot.message_handler(commands=['search'])
 def search_command(message):
     username = message.from_user.username or "Unknown"
@@ -497,7 +716,7 @@ def search_command(message):
         logging.info(f"Resposta para @{username}: {response}")
         bot.send_message(chat_id=message.chat.id, text=response)
 
-# Comandos de cotação
+# Handlers pras cotações de moedas
 @bot.message_handler(commands=['real'])
 def reais_message(message):
     username = message.from_user.username or "Unknown"
@@ -548,11 +767,12 @@ def dolar_message(message):
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(message.chat.id, response_text)
 
-# Função auxiliar para formatar preços
+# Função auxiliar pra formatar preços de cripto
 def format_price(price: float) -> str:
+    """Formata preço com duas casas decimais, usando vírgula como separador."""
     return f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-# Comandos de cotação coincap
+# Handlers pras cotações de criptomoedas
 @bot.message_handler(commands=['btc'])
 def bitcoin_price(message):
     username = message.from_user.username or "Unknown"
@@ -647,7 +867,7 @@ def handle_btc(message):
         logging.info(f"Resposta para @{username}: {response_text}")
         bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
 
-# Comandos de ajuda e gerenciamento de frases
+# Handlers pra gerenciar frases e ajuda
 @bot.message_handler(commands=['ajuda'])
 def help_message(message):
     username = message.from_user.username or "Unknown"
@@ -771,6 +991,7 @@ def remover_message(message):
         logging.info(f"Resposta para @{username}: {response}")
         bot.send_message(message.chat.id, response)
 
+# Handler pra responder a "boa cabelo" com "vlw barba"
 @bot.message_handler(func=lambda message: message.chat.type != 'private' and
                     message.text is not None and
                     "boa cabelo" in message.text.lower())
@@ -781,11 +1002,13 @@ def responder_boa_cabelo(message):
     logging.info(f"Resposta para @{username}: {response}")
     bot.reply_to(message, response)
 
+# Handler pra gerar imagens com xAI
 def responder_imagem(message):
     username = message.from_user.username or "Unknown"
     logging.info(f"Mensagem recebida de @{username}: {message.text}")
     inicio = time.time()
     prompt = message.text[len('/imagem'):].strip()
+    chat_id = message.chat.id
 
     if not prompt:
         response = "Por favor, forneça uma descrição para a imagem. Exemplo: /imagem porco deitado na grama"
@@ -815,6 +1038,9 @@ def responder_imagem(message):
             legenda = f"🖼️ Imagem gerada em {duracao} segundos"
             logging.info(f"Imagem gerada com sucesso em {duracao} segundos para prompt: '{prompt}' por @{username}")
             bot.send_photo(message.chat.id, image_url, caption=legenda, reply_to_message_id=message.message_id)
+            # Salva o prompt da imagem pra contexto futuro
+            last_image_prompt[chat_id] = prompt
+            chat_memory[chat_id].append({"role": "assistant", "content": f"[Imagem gerada com prompt: {prompt}]"})
         else:
             response_text = "Não consegui obter a imagem gerada."
             logging.info(f"Resposta para @{username}: {response_text}")
@@ -844,8 +1070,9 @@ def responder_imagem(message):
 def handle_imagem(message):
     responder_imagem(message)
 
-# Inicia o bot com captura de erros globais
+# Inicia o bot e mantém ele rodando
 try:
+    logging.info("Iniciando polling do bot...")
     bot.polling()
 except Exception as e:
     logging.error(f"[ERROR] Falha crítica no polling: {str(e)}")
