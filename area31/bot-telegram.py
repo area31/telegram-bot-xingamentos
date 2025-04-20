@@ -19,7 +19,7 @@ request_count = 0
 
 # Configuração do log
 logging.basicConfig(
-    filename='/home/morfetico/alta-linguagem/bot-telegram.log',
+    filename='bot-telegram.log',
     level=logging.INFO,
     format='%(asctime)s - %(message)s',
     filemode='a'
