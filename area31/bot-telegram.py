@@ -173,9 +173,36 @@ def escape_md_v2(text: str) -> str:
     return re.sub(r'([_\\[\]~`>#+\-=|{}.!])', r'\\\1', text)
 
 def to_html(text: str) -> str:
-    html = re.sub(r'\*\*([^\*]+)\*\*', r'<b>\1</b>', text)
+    # Separa blocos de código para evitar interpretação de <...> como tags HTML
+    code_blocks = []
+    def store_code_block(match):
+        code_blocks.append(match.group(0))
+        return f"__CODE_BLOCK_{len(code_blocks)-1}__"
+
+    texto = re.sub(r'```[\s\S]*?```', store_code_block, text, flags=re.DOTALL)
+
+    # Aplica formatações HTML fora dos blocos de código
+    html = re.sub(r'\*\*([^\*]+)\*\*', r'<b>\1</b>', texto)
     html = re.sub(r'_([^_]+)_', r'<i>\1</i>', html)
     html = re.sub(r'\[([^\]]+)\]\((https?://[^\s)]+)\)', r'<a href="\2">\1</a>', html)
+
+    # Restaura blocos de código, escapando < e > para evitar interpretação como tags HTML
+    for i, block in enumerate(code_blocks):
+        # Remove o delimitador ``` e o tipo de linguagem (ex.: ```c)
+        content = block.strip('`').split('\n', 1)
+        if len(content) > 1:
+            lang, code = content
+            lang = lang.strip()
+            code = code.strip()
+        else:
+            lang = ""
+            code = content[0].strip()
+        # Escapa < e > dentro do código
+        code = code.replace('<', '&lt;').replace('>', '&gt;')
+        # Restaura o bloco de código com formatação HTML
+        html_block = f"<pre><code>{code}</code></pre>"
+        html = html.replace(f"__CODE_BLOCK_{i}__", html_block)
+
     return html
 
 def get_chat_history(message, reply_limit: int = 12) -> list:
@@ -301,7 +328,17 @@ def get_prompt() -> str:
         logging.warning("prompt.cfg não encontrado, usando prompt padrão")
     return f"{base_prompt}\n\nSua resposta deve ter no máximo 4000 caracteres para caber no limite do Telegram. Evite usar asteriscos (*) ou outros caracteres especiais em excesso, a menos que necessários para formatação."
 
+#######################################
 # Função de resposta do BOT
+def escape_md_v2_preservando_codigo(text: str) -> str:
+    # Divide o texto em partes: blocos de código (```…```) e todo o resto
+    parts = re.split(r'(```[\s\S]*?```)', text, flags=re.DOTALL)
+    for i, part in enumerate(parts):
+        if not part.startswith('```'):
+            # Escapa apenas o que NÃO está entre ```…```
+            parts[i] = re.sub(r'([_\\[\]()\~`>#+\-=|{}.!])', r'\\\1', part)
+    return ''.join(parts)
+
 @bot.message_handler(func=lambda message: message.text is not None and
                     message.from_user.id != bot.get_me().id and
                     (bot.get_me().username in message.text or
@@ -313,13 +350,11 @@ def responder(message):
     logging.info(f"Mensagem recebida de @{username}: {message.text or '[No text]'}")
     logging.debug(f"Pergunta completa de @{username}: {message.text or '[No text]'}")
 
-    # Determine the target username for logging (for replies)
     if message.reply_to_message and message.reply_to_message.from_user:
         target_username = message.reply_to_message.from_user.username or "Unknown"
     else:
         target_username = username
 
-    # Bloqueia chats privados e bots
     if message.chat.type == 'private' or message.from_user.is_bot:
         response_text = tf.escape_markdown_v2("Desculpe, só respondo em grupos e não a bots!")
         tf.send_markdown(bot, message.chat.id, response_text)
@@ -327,7 +362,6 @@ def responder(message):
         logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
-    # Verifica se tem texto
     if not message.text:
         response_text = tf.escape_markdown_v2("Desculpe, não posso processar mensagens sem texto! Tente enviar uma mensagem com texto.")
         tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
@@ -335,7 +369,6 @@ def responder(message):
         logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
-    # Ignora mensagens curtas ou irrelevantes
     text_lower = message.text.lower().strip()
     if len(text_lower) < 5 or text_lower in ["ok", "sim", "não", "ta", "blz", "valeu"]:
         response_text = tf.escape_markdown_v2("Beleza, mas me dá mais contexto ou pergunta algo mais específico!")
@@ -344,7 +377,6 @@ def responder(message):
         logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
-    # Rate limit
     current_time = time.time()
     if current_time - start_time > TIME_WINDOW:
         start_time = current_time
@@ -357,7 +389,6 @@ def responder(message):
         return
     request_count += 1
 
-    # Verifica mensagem curta após imagem
     chat_id = message.chat.id
     if len(text_lower) < 15 and chat_id in last_image_prompt:
         response_text = tf.escape_markdown_v2(
@@ -369,14 +400,12 @@ def responder(message):
         logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
-    # Constrói o histórico antes de atualizar o chat_memory
     chat_history = get_chat_history(message, reply_limit=12)
     update_chat_memory(message)
 
     system_prompt = get_prompt()
     user_id = message.from_user.id
 
-    # Trata pedidos de barras invertidas
     if "manda" in text_lower and (r"\\" in message.text or "backslash" in text_lower):
         response_text = (
             r"Beleza, entendi! Vou usar `\` pra barras invertidas fora de blocos LaTeX, e `\` dentro de expressões matemáticas "
@@ -387,7 +416,6 @@ def responder(message):
         logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
-    # Trata pedidos de "code LaTeX do Telegram"
     if "code latex" in text_lower and "telegram" in text_lower:
         response_text = (
             "```latex\n"
@@ -395,8 +423,8 @@ def responder(message):
             "\\documentclass{article}\n"
             "\\usepackage{amsmath}\n\n"
             "\\begin{document}\n\n"
-            "A Fórmula de Euler é $$     e^{i\\pi} + 1 = 0     $$.\n\n"
-            "Em geral: $$     e^{i\\theta} = \\cos(\\theta) + i \\sin(\\theta)     $$\n\n"
+            "A Fórmula de Euler é $$         e^{i\\pi} + 1 = 0         $$.\n\n"
+            "Em geral: $$         e^{i\\theta} = \\cos(\\theta) + i \\sin(\\theta)         $$\n\n"
             "\\end{document}\n"
             "```"
         )
@@ -405,7 +433,6 @@ def responder(message):
         logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
-    # Trata perguntas sobre imagens
     if any(keyword in text_lower for keyword in ["quem são", "quem é", "o que é isso", "o que são", "prompt", "imagem", "último"]) and chat_id in last_image_prompt:
         response_text = tf.escape_markdown_v2(
             f"Você tá falando do último comando /imagem? O prompt foi '{last_image_prompt[chat_id]}'. "
@@ -416,7 +443,6 @@ def responder(message):
         logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
-    # Armazena infos
     if "armazene" in text_lower and ("info" in text_lower or "armazene" in text_lower.split()):
         try:
             info = message.text.split("armazene", 1)[1].replace("a info:", "").strip()
@@ -441,7 +467,6 @@ def responder(message):
             logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
             return
 
-    # Lista infos armazenadas
     if "quais são as infos que te pedi pra armazenar?" in text_lower or \
        "me diga o que pedi pra armazenar" in text_lower:
         if user_id in stored_info and stored_info[user_id]:
@@ -457,7 +482,6 @@ def responder(message):
             logging.debug(f"Resposta completa de erro enviada para @{target_username}: {response_text}")
         return
 
-    # Limpa infos
     if "limpe tudo que armazenou" in text_lower:
         clear_stored_info(user_id)
         response_text = tf.escape_markdown_v2("Feito, amigo! Tudo limpo, não guardei mais nada.")
@@ -466,7 +490,6 @@ def responder(message):
         logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
         return
 
-    # Adiciona infos ao prompt
     if user_id in stored_info:
         system_prompt += f"\nInformações que esse usuário me pediu pra guardar: {', '.join(stored_info[user_id])}"
     system_prompt += (
@@ -525,7 +548,6 @@ def responder(message):
             answer = "Opa, não consegui processar direito sua instrução. Tenta explicar de novo ou pedir algo diferente!"
             logging.debug(f"Resposta padrão usada para @{username}: {answer}")
 
-        # Adiciona a resposta ao chat_memory
         chat_memory[chat_id].append({"role": "assistant", "content": answer, "user_id": bot.get_me().id})
 
         # Verifica o limite de caracteres do Telegram
@@ -535,52 +557,38 @@ def responder(message):
             logging.debug(f"Resposta truncada para @{username}: {answer}")
 
         try:
-            # Tenta enviar como MarkdownV2
-            mensagem = escape_md_v2(answer)
-            logging.debug(f"Texto escapado para MarkdownV2: {mensagem}")
+            mensagem = escape_md_v2_preservando_codigo(answer)
+            logging.debug(f"Texto escapado para MarkdownV2: {mensagem[:200]}...")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=mensagem,
+                parse_mode='MarkdownV2',
+                reply_to_message_id=message.reply_to_message.message_id if message.reply_to_message else None,
+                disable_web_page_preview=False
+            )
             if message.reply_to_message:
-                bot.send_message(
-                    chat_id=message.chat.id,
-                    text=mensagem,
-                    parse_mode='MarkdownV2',
-                    reply_to_message_id=message.reply_to_message_id,
-                    disable_web_page_preview=False
-                )
-                logging.info(f"Resposta enviada para @{target_username} (reply): {mensagem}")
+                logging.info(f"Resposta enviada para @{target_username} (reply): {mensagem[:100]}...")
                 logging.debug(f"Resposta completa enviada para @{target_username} (reply): {mensagem}")
             else:
-                bot.send_message(
-                    chat_id=message.chat.id,
-                    text=mensagem,
-                    parse_mode='MarkdownV2',
-                    disable_web_page_preview=False
-                )
-                logging.info(f"Resposta enviada para @{target_username}: {mensagem}")
+                logging.info(f"Resposta enviada para @{target_username}: {mensagem[:100]}...")
                 logging.debug(f"Resposta completa enviada para @{target_username} (MarkdownV2): {mensagem}")
         except Exception as e:
             logging.error(f"[ERROR] Falha ao enviar com MarkdownV2 para @{target_username}: {str(e)}")
-            logging.debug(f"Mensagem problemática para @{target_username}: {mensagem}")
+            logging.debug(f"Mensagem problemática para @{target_username}: {mensagem[:200]}...")
             try:
-                # Fallback para HTML
                 html_text = to_html(answer)
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=html_text,
+                    parse_mode='HTML',
+                    reply_to_message_id=message.reply_to_message.message_id if message.reply_to_message else None,
+                    disable_web_page_preview=False
+                )
                 if message.reply_to_message:
-                    bot.send_message(
-                        chat_id=message.chat.id,
-                        text=html_text,
-                        parse_mode='HTML',
-                        reply_to_message_id=message.reply_to_message_id,
-                        disable_web_page_preview=False
-                    )
-                    logging.info(f"Resposta fallback enviada para @{target_username} (reply): {html_text}")
+                    logging.info(f"Resposta fallback enviada para @{target_username} (reply): {html_text[:100]}...")
                     logging.debug(f"Resposta completa fallback enviada para @{target_username} (reply, HTML): {html_text}")
                 else:
-                    bot.send_message(
-                        chat_id=message.chat.id,
-                        text=html_text,
-                        parse_mode='HTML',
-                        disable_web_page_preview=False
-                    )
-                    logging.info(f"Resposta fallback enviada para @{target_username}: {html_text}")
+                    logging.info(f"Resposta fallback enviada para @{target_username}: {html_text[:100]}...")
                     logging.debug(f"Resposta completa fallback enviada para @{target_username} (HTML): {html_text}")
             except Exception as e2:
                 logging.error(f"[ERROR] Falha no fallback para @{target_username}: {str(e2)}")
@@ -611,6 +619,7 @@ def responder(message):
         logging.info(f"Resposta de erro enviada para @{target_username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{target_username}: {response_text}")
 
+#######################################
 # Outros handlers permanecem inalterados
 @bot.message_handler(commands=['youtube'])
 def youtube_search_command(message):
