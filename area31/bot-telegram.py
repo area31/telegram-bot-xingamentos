@@ -18,7 +18,12 @@ start_time = time.time()
 request_count = 0
 
 # Configuração do log
-logging.basicConfig(filename='bot-telegram.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+logging.basicConfig(
+    filename='/home/morfetico/alta-linguagem/bot-telegram.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s',
+    filemode='a'
+)
 logging.info("Bot iniciado.")
 
 # Rate limit
@@ -56,18 +61,15 @@ def escape_markdown_v2(text):
     while i < length:
         if i + 2 < length and text[i:i+3] == "```":
             if not code_block_open:
-                # Início de um bloco de código
                 code_block_open = True
                 i += 3
-                # Capturar a linguagem (se houver) até a próxima quebra de linha
                 lang = ""
                 while i < length and text[i] != "\n":
                     lang += text[i]
                     i += 1
                 if i < length:
-                    i += 1  # Pular a quebra de linha após a linguagem
+                    i += 1
                 result += "```" + lang + "\n"
-                # Acumular o conteúdo até o próximo ```
                 while i < length:
                     if i + 2 < length and text[i:i+3] == "```":
                         i += 3
@@ -75,14 +77,12 @@ def escape_markdown_v2(text):
                         result += code_block_content.rstrip() + "```"
                         code_block_content = ""
                         break
-                    # Escapar \ dentro do bloco de código
                     if text[i] == "\\":
                         code_block_content += "\\\\"
                     else:
                         code_block_content += text[i]
                     i += 1
             else:
-                # Ignorar ``` extras dentro do bloco
                 i += 3
         elif i + 1 < length and text[i:i+2] == "**":
             result += "*" if not code_block_open else "**"
@@ -141,21 +141,17 @@ def escape_markdown_v2(text):
                 result += text[i]
             i += 1
 
-    # Fechar bloco de código se ainda estiver aberto
     if code_block_open:
         result += code_block_content.rstrip() + "```"
 
-    # Garantir que o resultado nunca seja vazio
     if not result:
         result = "Erro ao processar formatação, tente novamente."
 
-    # Truncar para o limite do Telegram
     if len(result) > TELEGRAM_MAX_CHARS:
         result = result[:TELEGRAM_MAX_CHARS - 3] + "..."
         if code_block_open and not result.endswith("```"):
             result += "```"
     return result
-
 
 # Armazenamento em memória
 stored_info = {}
@@ -198,14 +194,13 @@ XAI_API_KEY = config_xai['DEFAULT']['API_KEY']
 # Configuração do Bot (OpenAI ou xAI)
 config_bot = configparser.ConfigParser()
 config_bot.read('bot-telegram.cfg')
-BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'openai')  # Default para OpenAI se não especificado
+BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'openai')  # Default para OpenAI
+XAI_MODEL = config_bot['DEFAULT'].get('XAI_MODEL', 'grok-2-latest')
 
 # Parâmetros gerais
-MAX_TOKENS = 1000  # Mantido para dar espaço, mas o prompt controlará o tamanho
+MAX_TOKENS = 1000
 TEMPERATURE = 0.8
-OPENAI_MODEL = "gpt-4"  # Ou "gpt-3.5-turbo"
-# Default grok2-latest caso nao seja especificado no bot-telegram.cfg
-XAI_MODEL = config_bot['DEFAULT'].get('XAI_MODEL', 'grok-2-latest')
+OPENAI_MODEL = "gpt-4"
 
 def count_tokens(messages):
     total_tokens = 0
@@ -213,7 +208,6 @@ def count_tokens(messages):
         total_tokens += len(msg["content"].split()) + 10
     return total_tokens
 
-# Prompt ajustado para limitar o tamanho da resposta
 def get_prompt() -> str:
     try:
         with open('prompt.cfg', 'r', encoding='utf-8') as arquivo:
@@ -223,13 +217,13 @@ def get_prompt() -> str:
                        "Responda de forma natural, como um amigo conversando, mantendo o contexto da conversa. "
                        "Quando o usuário pedir para 'armazenar a info', guarde a informação em uma lista associada ao ID do usuário. "
                        "Quando perguntado 'quais são as infos que te pedi pra armazenar?', responda com a lista de informações armazenadas.")
-    # Adicionar instrução de limite de caracteres
     return f"{base_prompt}\n\nSua resposta deve ter no máximo 4000 caracteres para caber no limite do Telegram (4096 caracteres, incluindo formatação). Se necessário, resuma ou ajuste o conteúdo para não ultrapassar esse limite."
 
 # Xingamentos
 @bot.message_handler(commands=['xinga'])
 def random_message(message):
-    logging.info("Comando /xinga chamado.")
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     conn = sqlite3.connect('frases.db')
     c = conn.cursor()
     c.execute("SELECT frase FROM frases")
@@ -237,65 +231,32 @@ def random_message(message):
     conn.close()
 
     if not frases:
-        bot.send_message(message.chat.id, 'Não há frases cadastradas.')
+        response = 'Não há frases cadastradas.'
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.send_message(message.chat.id, response)
         return
 
     frase_escolhida = random.choice(frases)[0]
 
+#    if message.reply_to_message and hasattr(message.reply_to_message, 'from_user'):
+#        response = frase_escolhida
+#        logging.info(f"Resposta para @{username} (reply): {response}")
+#        bot.reply_to(message.reply_to_message, response)
     if message.reply_to_message and hasattr(message.reply_to_message, 'from_user'):
-        bot.reply_to(message.reply_to_message, frase_escolhida)
-        logging.info(f"Comando /xinga chamado por @{message.from_user.username} como reply. Resposta: {frase_escolhida}")
+        target_user = message.reply_to_message.from_user.username or "Unknown"
+        response = frase_escolhida
+        logging.info(f"Resposta para @{target_user} (reply via @{username}): {response}")
+        bot.reply_to(message.reply_to_message, response)
     else:
         command_parts = message.text.split(maxsplit=2)
         if len(command_parts) > 1 and command_parts[1].startswith('@'):
-            resposta = "{} {}".format(command_parts[1], frase_escolhida)
+            response = "{} {}".format(command_parts[1], frase_escolhida)
         else:
-            resposta = frase_escolhida
+            response = frase_escolhida
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.send_message(message.chat.id, response)
 
-        bot.send_message(message.chat.id, resposta)
-        logging.info(f"Comando /xinga chamado por @{message.from_user.username}. Resposta: {resposta}")
-
-# ChatGPT/xAI - Funções Auxiliares
-def update_chat_memory(message):
-    chat_id = message.chat.id
-    if chat_id not in chat_memory:
-        chat_memory[chat_id] = []
-    
-    role = "user" if message.from_user.id != bot.get_me().id else "assistant"
-    chat_memory[chat_id].append({"role": role, "content": message.text})
-    
-    if len(chat_memory[chat_id]) > 10:
-        chat_memory[chat_id] = chat_memory[chat_id][-10:]
-
-def get_chat_history(message, reply_limit: int = 4) -> list:
-    chat_id = message.chat.id
-    history = []
-
-    if message.reply_to_message:
-        current_message = message
-        history.append({"role": "user", "content": current_message.text})
-        while current_message.reply_to_message and len(history) < reply_limit + 1:
-            previous_message = current_message.reply_to_message
-            role = "assistant" if previous_message.from_user.id == bot.get_me().id else "user"
-            history.append({"role": role, "content": previous_message.text})
-            current_message = previous_message
-        history.reverse()
-    else:
-        if chat_id in chat_memory:
-            history = chat_memory[chat_id].copy()
-
-    token_count = count_tokens(history)
-    while token_count > MAX_TOKENS * 0.7:
-        history.pop(0)
-        token_count = count_tokens(history)
-
-    return history
-
-def clear_stored_info(user_id):
-    if user_id in stored_info:
-        del stored_info[user_id]
-        logging.info(f"Informações armazenadas limpas para user_id {user_id}")
-
+# ChatGPT/xAI
 @bot.message_handler(func=lambda message: message.text is not None and
                     message.from_user.id != bot.get_me().id and
                     (bot.get_me().username in message.text or
@@ -303,8 +264,13 @@ def clear_stored_info(user_id):
                       message.reply_to_message.from_user.id == bot.get_me().id)))
 def responder(message):
     global start_time, request_count
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
 
     if message.chat.type == 'private' or message.from_user.is_bot:
+        response_text = "Desculpe, só respondo em grupos e não a bots!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         return
 
     current_time = time.time()
@@ -312,7 +278,9 @@ def responder(message):
         start_time = current_time
         request_count = 0
     if request_count >= REQUEST_LIMIT:
-        bot.send_message(message.chat.id, escape_markdown_v2("Tô de boa, mas muito requisitado agora! Tenta de novo em uns segundos."), parse_mode='MarkdownV2')
+        response_text = "Tô de boa, mas muito requisitado agora! Tenta de novo em uns segundos."
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         return
     request_count += 1
 
@@ -327,16 +295,22 @@ def responder(message):
         try:
             info = message.text.split("armazene", 1)[1].replace("a info:", "").strip()
             if not info:
-                bot.reply_to(message, escape_markdown_v2("Opa, amigo! Armazenar o quê? Me dá algo pra guardar!"), parse_mode='MarkdownV2')
+                response_text = "Opa, amigo! Armazenar o quê? Me dá algo pra guardar!"
+                logging.info(f"Resposta para @{username}: {response_text}")
+                bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
                 return
             if user_id not in stored_info:
                 stored_info[user_id] = []
             stored_info[user_id].append(info)
-            logging.info(f"Info armazenada para user_id {user_id}: {info}")
-            bot.reply_to(message, escape_markdown_v2("Beleza, guardei a info pra você!"), parse_mode='MarkdownV2')
+            logging.info(f"Info armazenada para user_id {user_id} de @{username}: {info}")
+            response_text = "Beleza, guardei a info pra você!"
+            logging.info(f"Resposta para @{username}: {response_text}")
+            bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
             return
         except IndexError:
-            bot.reply_to(message, escape_markdown_v2("Opa, amigo! Armazenar o quê? Me dá algo pra guardar!"), parse_mode='MarkdownV2')
+            response_text = "Opa, amigo! Armazenar o quê? Me dá algo pra guardar!"
+            logging.info(f"Resposta para @{username}: {response_text}")
+            bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
             return
 
     if "quais são as infos que te pedi pra armazenar?" in text_lower or \
@@ -345,12 +319,15 @@ def responder(message):
             resposta = "Olha só o que você me pediu pra guardar:\n" + "\n".join(stored_info[user_id])
         else:
             resposta = "Você ainda não me passou nenhuma info pra guardar, amigo!"
+        logging.info(f"Resposta para @{username}: {resposta}")
         bot.reply_to(message, escape_markdown_v2(resposta), parse_mode='MarkdownV2')
         return
 
     if "limpe tudo que armazenou" in text_lower:
         clear_stored_info(user_id)
-        bot.reply_to(message, escape_markdown_v2("Feito, amigo! Tudo limpo, não guardei mais nada."), parse_mode='MarkdownV2')
+        response_text = "Feito, amigo! Tudo limpo, não guardei mais nada."
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.reply_to(message, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         return
 
     if user_id in stored_info:
@@ -392,14 +369,12 @@ def responder(message):
             raise ValueError(f"Configuração inválida para BOT_AI: {BOT_AI}. Use 'openai' ou 'xai'.")
 
         response_time = time.time() - start_time
-        logging.info(f"Resposta gerada em {response_time:.2f}s usando {BOT_AI}: {answer}")
-
         if not answer or len(answer) < 3:
             answer = "Poxa, me deu um branco agora... deixa eu pensar melhor!"
+        logging.info(f"Resposta gerada em {response_time:.2f}s usando {BOT_AI} para @{username}: {answer}")
 
         chat_memory[message.chat.id].append({"role": "assistant", "content": answer})
         answer_escaped = escape_markdown_v2(answer)
-        logging.info(f"Texto escapado enviado ao Telegram: {answer_escaped}")
 
         if message.reply_to_message:
             bot.reply_to(message, answer_escaped, parse_mode='MarkdownV2')
@@ -407,23 +382,34 @@ def responder(message):
             bot.send_message(message.chat.id, answer_escaped, parse_mode='MarkdownV2')
 
     except OpenAIError as e:
-        error_msg = f"Erro na API da OpenAI: {str(e)}"
+        error_msg = f"[ERROR] Erro na API da OpenAI: {str(e)}"
         logging.error(error_msg)
-        bot.send_message(message.chat.id, escape_markdown_v2("Ops, minha cabeça de IA deu tilt! Tenta de novo!"), parse_mode='MarkdownV2')
+        response_text = "Ops, minha cabeça de IA deu tilt! Tenta de novo!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
     except requests.exceptions.RequestException as e:
-        error_msg = f"Erro na API da xAI: {str(e)}"
+        error_msg = f"[ERROR] Erro na API da xAI: {str(e)}"
         logging.error(error_msg)
-        bot.send_message(message.chat.id, escape_markdown_v2("Ops, deu problema com a xAI! Tenta de novo!"), parse_mode='MarkdownV2')
+        response_text = "Ops, deu problema com a xAI! Tenta de novo!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
     except Exception as e:
-        logging.error(f"Erro inesperado: {str(e)}")
-        bot.send_message(message.chat.id, escape_markdown_v2("Deu uma zica aqui, brother! Tenta depois!"), parse_mode='MarkdownV2')
+        error_msg = f"[ERROR] Inesperado: {str(e)}"
+        logging.error(error_msg)
+        response_text = "Deu uma zica aqui, brother! Tenta depois!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
 
 # Busca no YouTube
 @bot.message_handler(commands=['youtube'])
 def youtube_search_command(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     query = message.text.replace("/youtube", "").strip()
     if not query:
-        bot.send_message(chat_id=message.chat.id, text="Por favor, execute o /youtube com algum termo de busca")
+        response = "Por favor, execute o /youtube com algum termo de busca"
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.send_message(chat_id=message.chat.id, text=response)
         return
 
     API_KEY = open("token-google.cfg").read().strip()
@@ -436,7 +422,9 @@ def youtube_search_command(message):
 
         items = data.get("items", [])
         if not items:
-            bot.send_message(chat_id=message.chat.id, text="Não foram encontrados resultados para a sua pesquisa.")
+            response_text = "Não foram encontrados resultados para a sua pesquisa."
+            logging.info(f"Resposta para @{username}: {response_text}")
+            bot.send_message(chat_id=message.chat.id, text=response_text)
             return
 
         resposta = f"🔎 Resultados do YouTube para *{query}*:\n\n"
@@ -446,22 +434,32 @@ def youtube_search_command(message):
             url = f"https://www.youtube.com/watch?v={video_id}"
             resposta += f"- {titulo}\n{url}\n\n"
 
+        logging.info(f"Resposta para @{username}: {resposta.strip()}")
         bot.send_message(chat_id=message.chat.id, text=resposta.strip())
 
     except requests.exceptions.RequestException as e:
-        bot.send_message(chat_id=message.chat.id, text="Erro ao acessar a API do YouTube.")
-        logging.error(f"Erro YouTube API: {str(e)}")
+        error_msg = f"[ERROR] YouTube API: {str(e)}"
+        logging.error(error_msg)
+        response_text = "Erro ao acessar a API do YouTube."
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(chat_id=message.chat.id, text=response_text)
     except Exception as e:
-        bot.send_message(chat_id=message.chat.id, text="Erro inesperado ao buscar no YouTube.")
-        logging.error(f"Erro inesperado /youtube: {str(e)}")
-
+        error_msg = f"[ERROR] Inesperado /youtube: {str(e)}"
+        logging.error(error_msg)
+        response_text = "Erro inesperado ao buscar no YouTube."
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(chat_id=message.chat.id, text=response_text)
 
 # Busca no Google
 @bot.message_handler(commands=['search'])
 def search_command(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     query = message.text.replace("/search", "").strip()
     if not query:
-        bot.send_message(chat_id=message.chat.id, text="Por favor, execute o /search com algum termo de busca")
+        response = "Por favor, execute o /search com algum termo de busca"
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.send_message(chat_id=message.chat.id, text=response)
         return
 
     API_KEY = open("token-google.cfg").read().strip()
@@ -471,121 +469,178 @@ def search_command(message):
     try:
         results = requests.get(search_url).json()
         if results.get("searchInformation").get("totalResults") == "0":
-            bot.send_message(chat_id=message.chat.id, text="Não foram encontrados resultados para a sua pesquisa.")
+            response = "Não foram encontrados resultados para a sua pesquisa."
+            logging.info(f"Resposta para @{username}: {response}")
+            bot.send_message(chat_id=message.chat.id, text=response)
             return
         results = results["items"]
         response = "Resultados da pesquisa para '" + query + "': \n"
         for result in results[:5]:
             response += result["title"] + " - " + result["link"] + "\n"
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.send_message(chat_id=message.chat.id, text=response)
     except (requests.exceptions.RequestException, KeyError) as e:
+        error_msg = f"[ERROR] Google API: {str(e)}"
+        logging.error(error_msg)
         response = "Desculpe, ocorreu um erro ao acessar a API do Google. Por favor, tente novamente mais tarde."
-
-    bot.send_message(chat_id=message.chat.id, text=response)
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.send_message(chat_id=message.chat.id, text=response)
 
 # Comandos de cotação
 @bot.message_handler(commands=['real'])
 def reais_message(message):
-    bot.send_message(message.chat.id, 'O real não vale nada, é uma bosta essa moeda estado de merda!')
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
+    response = 'O real não vale nada, é uma bosta essa moeda estado de merda!'
+    logging.info(f"Resposta para @{username}: {response}")
+    bot.send_message(message.chat.id, response)
 
 @bot.message_handler(commands=['euro'])
 def euro_message(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     url = 'https://economia.awesomeapi.com.br/all/EUR-BRL'
-    r = requests.get(url)
-    euro_data = r.json()
-    valor_euro = euro_data['EUR']['bid']
-    bot.send_message(message.chat.id, 'O valor atual do euro em reais é R$ ' + valor_euro)
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        euro_data = response.json()
+        valor_euro = euro_data['EUR']['bid']
+        response_text = f"O valor atual do euro em reais é R$ {valor_euro}"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, response_text)
+    except (requests.exceptions.RequestException, KeyError, ValueError) as e:
+        error_msg = f"[ERROR] Euro API: {str(e)}"
+        logging.error(error_msg)
+        response_text = "Erro ao consultar a cotação do euro. Tente novamente!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, response_text)
 
 @bot.message_handler(commands=['dolar'])
 def dolar_message(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     url = 'https://economia.awesomeapi.com.br/all/USD-BRL'
-    r = requests.get(url)
-    dolar_data = r.json()
-    valor_dolar = dolar_data['USD']['bid']
-    bot.send_message(message.chat.id, 'O valor atual do dólar em reais é R$ ' + valor_dolar)
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        dolar_data = response.json()
+        valor_dolar = dolar_data['USD']['bid']
+        response_text = f"O valor atual do dólar em reais é R$ {valor_dolar}"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, response_text)
+    except (requests.exceptions.RequestException, KeyError, ValueError) as e:
+        error_msg = f"[ERROR] Dolar API: {str(e)}"
+        logging.error(error_msg)
+        response_text = "Erro ao consultar a cotação do dólar. Tente novamente!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, response_text)
 
 # Função auxiliar para formatar preços
 def format_price(price: float) -> str:
     return f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 # Comandos de cotação coincap
-# Comandos de cotação (atualizados para API v3 com logging seguro)
 @bot.message_handler(commands=['btc'])
 def bitcoin_price(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     url = f"https://rest.coincap.io/v3/assets/bitcoin?apiKey={COINCAP_API_KEY}"
-    log_url = "https://rest.coincap.io/v3/assets/bitcoin?apiKey=****"  # URL ofuscada para log
-    logging.info(f"Comando /btc chamado por @{message.from_user.username}, URL: {log_url}")
-    
+    log_url = "https://rest.coincap.io/v3/assets/bitcoin?apiKey=****"
+
     try:
         response = requests.get(url, timeout=10)
-        response.raise_for_status()  # Levanta exceção para códigos 4xx/5xx
+        response.raise_for_status()
         data = response.json()
-        
-        # Verifica se a resposta contém 'data' e 'priceUsd'
+
         if 'data' in data and 'priceUsd' in data['data']:
             price = round(float(data['data']['priceUsd']), 2)
             formatted_price = format_price(price)
             response_text = f"Cotação atual do Bitcoin em dólar: ${formatted_price}"
-            logging.info(f"Resposta /btc: {response_text}")
+            logging.info(f"Resposta para @{username}: {response_text}")
             bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         else:
-            # Trata mensagem de erro ou resposta inesperada
             error_msg = data.get('data', {}).get('message', 'Resposta inesperada da API')
-            logging.error(f"Erro /btc: {error_msg}")
-            bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao obter cotação do Bitcoin: {error_msg}"), parse_mode='MarkdownV2')
-            
+            logging.error(f"[ERROR] /btc para @{username}: {error_msg}")
+            response_text = f"Erro ao obter cotação do Bitcoin: {error_msg}"
+            logging.info(f"Resposta para @{username}: {response_text}")
+            bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
+
     except requests.exceptions.HTTPError as e:
-        logging.error(f"Erro HTTP /btc: Status: {response.status_code}")
-        bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao consultar Bitcoin: Problema na API (HTTP {response.status_code})"), parse_mode='MarkdownV2')
+        status_code = e.response.status_code if e.response else "Unknown"
+        logging.error(f"[ERROR] HTTP /btc para @{username}: Status: {status_code}")
+        response_text = f"Erro ao consultar Bitcoin: Problema na API (HTTP {status_code})"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
     except requests.exceptions.RequestException as e:
-        logging.error(f"Erro de rede /btc: {str(e)}")
-        bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Bitcoin: Falha na conexão com a API"), parse_mode='MarkdownV2')
+        logging.error(f"[ERROR] Rede /btc para @{username}: {str(e)}")
+        response_text = "Erro ao consultar Bitcoin: Falha na conexão com a API"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
     except (KeyError, TypeError, ValueError) as e:
-        logging.error(f"Erro de parsing /btc: {str(e)}, Resposta: [redacted]")
-        bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Bitcoin: Resposta inválida da API"), parse_mode='MarkdownV2')
+        logging.error(f"[ERROR] Parsing /btc para @{username}: {str(e)}, Resposta: [redacted]")
+        response_text = "Erro ao consultar Bitcoin: Resposta inválida da API"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
     except Exception as e:
-        logging.error(f"Erro inesperado /btc: {str(e)}")
-        bot.send_message(message.chat.id, escape_markdown_v2("Erro inesperado ao consultar Bitcoin. Tente novamente!"), parse_mode='MarkdownV2')
+        logging.error(f"[ERROR] Inesperado /btc para @{username}: {str(e)}")
+        response_text = "Erro inesperado ao consultar Bitcoin. Tente novamente!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
 
 @bot.message_handler(commands=['xmr'])
 def handle_btc(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     url = f"https://rest.coincap.io/v3/assets/monero?apiKey={COINCAP_API_KEY}"
-    log_url = "https://rest.coincap.io/v3/assets/monero?apiKey=****"  # URL ofuscada para log
-    logging.info(f"Comando /xmr chamado por @{message.from_user.username}, URL: {log_url}")
-    
+    log_url = "https://rest.coincap.io/v3/assets/monero?apiKey=****"
+
     try:
         response = requests.get(url, timeout=10)
-        response.raise_for_status()  # Levanta exceção para códigos 4xx/5xx
+        response.raise_for_status()
         data = response.json()
-        
-        # Verifica se a resposta contém 'data' e 'priceUsd'
+
         if 'data' in data and 'priceUsd' in data['data']:
             price = round(float(data['data']['priceUsd']), 2)
             formatted_price = format_price(price)
             response_text = f"Cotação atual do Monero em dólar: ${formatted_price}"
-            logging.info(f"Resposta /xmr: {response_text}")
+            logging.info(f"Resposta para @{username}: {response_text}")
             bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
         else:
-            # Trata mensagem de erro ou resposta inesperada
             error_msg = data.get('data', {}).get('message', 'Resposta inesperada da API')
-            logging.error(f"Erro /xmr: {error_msg}")
-            bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao obter cotação do Monero: {error_msg}"), parse_mode='MarkdownV2')
-            
+            logging.error(f"[ERROR] /xmr para @{username}: {error_msg}")
+            response_text = f"Erro ao obter cotação do Monero: {error_msg}"
+            logging.info(f"Resposta para @{username}: {response_text}")
+            bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
+
     except requests.exceptions.HTTPError as e:
-        logging.error(f"Erro HTTP /xmr: Status: {response.status_code}")
-        bot.send_message(message.chat.id, escape_markdown_v2(f"Erro ao consultar Monero: Problema na API (HTTP {response.status_code})"), parse_mode='MarkdownV2')
+        status_code = e.response.status_code if e.response else "Unknown"
+        logging.error(f"[ERROR] HTTP /xmr para @{username}: Status: {status_code}")
+        response_text = f"Erro ao consultar Monero: Problema na API (HTTP {status_code})"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
     except requests.exceptions.RequestException as e:
-        logging.error(f"Erro de rede /xmr: {str(e)}")
-        bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Monero: Falha na conexão com a API"), parse_mode='MarkdownV2')
+        logging.error(f"[ERROR] Rede /xmr para @{username}: {str(e)}")
+        response_text = "Erro ao consultar Monero: Falha na conexão com a API"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
     except (KeyError, TypeError, ValueError) as e:
-        logging.error(f"Erro de parsing /xmr: {str(e)}, Resposta: [redacted]")
-        bot.send_message(message.chat.id, escape_markdown_v2("Erro ao consultar Monero: Resposta inválida da API"), parse_mode='MarkdownV2')
+        logging.error(f"[ERROR] Parsing /xmr para @{username}: {str(e)}, Resposta: [redacted]")
+        response_text = "Erro ao consultar Monero: Resposta inválida da API"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
     except Exception as e:
-        logging.error(f"Erro inesperado /xmr: {str(e)}")
-        bot.send_message(message.chat.id, escape_markdown_v2("Erro inesperado ao consultar Monero. Tente novamente!"), parse_mode='MarkdownV2')
+        logging.error(f"[ERROR] Inesperado /xmr para @{username}: {str(e)}")
+        response_text = "Erro inesperado ao consultar Monero. Tente novamente!"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.send_message(message.chat.id, escape_markdown_v2(response_text), parse_mode='MarkdownV2')
 
 # Comandos de ajuda e gerenciamento de frases
 @bot.message_handler(commands=['ajuda'])
 def help_message(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     help_text = 'Comandos disponíveis:\n'
     help_text += '/add - Adiciona um xingamento, mas seja insolente por favor\n'
     help_text += '/list - Lista os xingamentos cadastrados\n'
@@ -599,17 +654,24 @@ def help_message(message):
     help_text += '/youtube - Exibe resultados de busca de vídeos no Youtube\n'
     help_text += '/search - Exibe resultados de busca no Google\n'
     help_text += '/imagem - Gera uma imagem a partir de um texto (ex.: /imagem porco deitado na grama)'
+    logging.info(f"Resposta para @{username}: {help_text}")
     bot.send_message(message.chat.id, help_text)
 
 @bot.message_handler(commands=['add'])
 def add_message(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     text = message.text.split()
     if len(text) < 2:
-        bot.send_message(message.chat.id, 'Comando inválido. Use /add e insira o xingamento')
+        response = 'Comando inválido. Use /add e insira o xingamento'
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.send_message(message.chat.id, response)
         return
     frase = text[1]
     if len(message.text.split(' ', 1)[1]) > 150:
-        bot.send_message(message.chat.id, 'Xingamento muito longo, por favor use até 150 caracteres')
+        response = 'Xingamento muito longo, por favor use até 150 caracteres'
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.send_message(message.chat.id, response)
         return
     conn = sqlite3.connect('frases.db')
     c = conn.cursor()
@@ -617,10 +679,14 @@ def add_message(message):
     c.execute("INSERT INTO frases (frase) VALUES (?)", (frase,))
     conn.commit()
     conn.close()
-    bot.send_message(message.chat.id, 'Xingamento adicionado com sucesso! Seu zuero!')
+    response = 'Xingamento adicionado com sucesso! Seu zuero!'
+    logging.info(f"Resposta para @{username}: {response}")
+    bot.send_message(message.chat.id, response)
 
 @bot.message_handler(commands=['list'])
 def list_message(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     chat_id = message.chat.id
     if message.chat.type != 'private':
         admin_ids = [admin.user.id for admin in bot.get_chat_administrators(chat_id) if admin.status != 'creator']
@@ -632,30 +698,32 @@ def list_message(message):
             frases = c.fetchall()
             conn.close()
             if not frases:
-                bot.send_message(message.chat.id, 'Não há frases cadastradas.')
+                response = 'Não há frases cadastradas.'
+                logging.info(f"Resposta para @{username}: {response}")
+                bot.send_message(message.chat.id, response)
             else:
-                for frase in frases:
-                    message_enviada = False
-                    bot.send_message(message.chat.id, 'Xingamentos cadastrados:')
-                    chunk_size = 20
-                    if not message_enviada:
-                        for i in range(0, len(frases), chunk_size):
-                            message = '\n'.join([f'{frase[0]}: {frase[1]}' for frase in frases[i:i+chunk_size]])
-                            bot.send_message(message.chat.id, message)
-                            time.sleep(5)
-                            message_enviada = True
-                    else:
-                        message_enviada = True
-                        break
-                    message_enviada = True
-                    break
+                response = 'Xingamentos cadastrados:'
+                logging.info(f"Resposta para @{username}: {response}")
+                bot.send_message(message.chat.id, response)
+                chunk_size = 20
+                for i in range(0, len(frases), chunk_size):
+                    message_text = '\n'.join([f'{frase[0]}: {frase[1]}' for frase in frases[i:i+chunk_size]])
+                    logging.info(f"Resposta para @{username}: {message_text}")
+                    bot.send_message(message.chat.id, message_text)
+                    time.sleep(5)
         else:
-            bot.send_message(message.chat.id, 'Apenas o administrador e o dono do grupo podem executar este comando')
+            response = 'Apenas o administrador e o dono do grupo podem executar este comando'
+            logging.info(f"Resposta para @{username}: {response}")
+            bot.send_message(message.chat.id, response)
     else:
-        bot.send_message(message.chat.id, 'Este comando não pode ser usado em chats privados')
+        response = 'Este comando não pode ser usado em chats privados'
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.send_message(message.chat.id, response)
 
 @bot.message_handler(commands=['remover'])
 def remover_message(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     chat_id = message.chat.id
     user_id = message.from_user.id
     if message.chat.type != 'private':
@@ -664,11 +732,15 @@ def remover_message(message):
         if user_id == owner_id or user_id in admin_ids:
             frase_list = message.text.split()
             if len(frase_list) < 2:
-                bot.send_message(message.chat.id, 'Insira um ID válido para remover')
+                response = 'Insira um ID válido para remover'
+                logging.info(f"Resposta para @{username}: {response}")
+                bot.send_message(message.chat.id, response)
                 return
             frase_id = frase_list[1]
             if not frase_id.isdigit():
-                bot.send_message(message.chat.id, 'Insira um ID válido para remover, ID é um número, seu MACACO!')
+                response = 'Insira um ID válido para remover, ID é um número, seu MACACO!'
+                logging.info(f"Resposta para @{username}: {response}")
+                bot.send_message(message.chat.id, response)
                 return
             frase = frase_list[1]
             conn = sqlite3.connect('frases.db')
@@ -676,27 +748,38 @@ def remover_message(message):
             c.execute("DELETE FROM frases WHERE ID = ?", (frase,))
             conn.commit()
             conn.close()
-            bot.send_message(message.chat.id, 'Xingamento removido com sucesso!')
+            response = 'Xingamento removido com sucesso!'
+            logging.info(f"Resposta para @{username}: {response}")
+            bot.send_message(message.chat.id, response)
         else:
-            bot.send_message(message.chat.id, 'Somente o dono do grupo e administradores podem executar este comando.')
+            response = 'Somente o dono do grupo e administradores podem executar este comando.'
+            logging.info(f"Resposta para @{username}: {response}")
+            bot.send_message(message.chat.id, response)
     else:
-        bot.send_message(message.chat.id, 'Este comando não pode ser executado em conversas privadas.')
+        response = 'Este comando não pode ser executado em conversas privadas.'
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.send_message(message.chat.id, response)
 
 @bot.message_handler(func=lambda message: message.chat.type != 'private' and
                     message.text is not None and
                     "boa cabelo" in message.text.lower())
 def responder_boa_cabelo(message):
-    bot.reply_to(message, "vlw barba")
-    logging.info(f"Resposta 'vlw barba' enviada para '{message.text}' por @{message.from_user.username}")
-
-#########################################################################################
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
+    response = "vlw barba"
+    logging.info(f"Resposta para @{username}: {response}")
+    bot.reply_to(message, response)
 
 def responder_imagem(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
     inicio = time.time()
     prompt = message.text[len('/imagem'):].strip()
 
     if not prompt:
-        bot.reply_to(message, "Por favor, forneça uma descrição para a imagem. Exemplo: /imagem porco deitado na grama")
+        response = "Por favor, forneça uma descrição para a imagem. Exemplo: /imagem porco deitado na grama"
+        logging.info(f"Resposta para @{username}: {response}")
+        bot.reply_to(message, response)
         return
 
     try:
@@ -719,35 +802,36 @@ def responder_imagem(message):
         if image_url:
             duracao = round(time.time() - inicio, 2)
             legenda = f"🖼️ Imagem gerada em {duracao} segundos"
+            logging.info(f"Imagem gerada com sucesso em {duracao} segundos para prompt: '{prompt}' por @{username}")
             bot.send_photo(message.chat.id, image_url, caption=legenda, reply_to_message_id=message.message_id)
-            logging.info(f"Imagem gerada com sucesso em {duracao} segundos para prompt: '{prompt}' por @{message.from_user.username}")
         else:
-            bot.reply_to(message, "Não consegui obter a imagem gerada.")
-
+            response_text = "Não consegui obter a imagem gerada."
+            logging.info(f"Resposta para @{username}: {response_text}")
+            bot.reply_to(message, response_text)
 
     except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if e.response else "Unknown"
         try:
             erro_detalhes = response.json()
             mensagem_erro = erro_detalhes.get("error", "Erro desconhecido.")
             codigo_erro = erro_detalhes.get("code", "sem código")
-            resposta_formatada = f"❌ Erro ao gerar imagem:\n{mensagem_erro}\n\n(código: {response.status_code} - {codigo_erro})"
+            response_text = f"❌ Erro ao gerar imagem:\n{mensagem_erro}\n\n(código: {status_code} - {codigo_erro})"
         except Exception:
-            resposta_formatada = f"❌ Erro ao chamar a API da xAI: {str(e)}"
-        bot.reply_to(message, resposta_formatada)
-        logging.error(f"Erro HTTP: {response.status_code} - {response.text}")
+            response_text = f"❌ Erro ao chamar a API da xAI: {str(e)}"
+        logging.error(f"[ERROR] HTTP para @{username}: Status: {status_code}")
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.reply_to(message, response_text)
 
     except Exception as e:
-        bot.reply_to(message, f"Ocorreu um erro: {str(e)}")
-        logging.error(f"Erro geral: {str(e)}")
-
-    logging.info(f"Tentativa de gerar imagem para '{prompt}' por @{message.from_user.username}")
+        error_msg = f"[ERROR] Inesperado para @{username}: {str(e)}"
+        logging.error(error_msg)
+        response_text = f"Ocorreu um erro: {str(e)}"
+        logging.info(f"Resposta para @{username}: {response_text}")
+        bot.reply_to(message, response_text)
 
 @bot.message_handler(func=lambda message: message.text.lower().startswith('/imagem'))
 def handle_imagem(message):
     responder_imagem(message)
 
-
-
-#########################################################################################
 # Inicia o bot
 bot.polling()
