@@ -38,6 +38,7 @@ def escape_markdown_v2(text: str) -> str:
 def bold_md(text: str) -> str:
     return f"*{escape_markdown_v2(text)}*"
 
+
 def italic_md(text: str) -> str:
     return f"_{escape_markdown_v2(text)}_"
 

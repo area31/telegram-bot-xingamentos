@@ -937,15 +937,35 @@ def random_message(message):
         logging.info(f"Resposta enviada para @{target_user}: {response}")
         logging.debug(f"Resposta completa enviada para @{target_user}: {response}")
 
+
 @bot.message_handler(commands=['real'])
 def reais_message(message):
     username = message.from_user.username or "Unknown"
     logging.info(f"Mensagem recebida de @{username}: {message.text}")
     logging.debug(f"Pergunta completa de @{username}: {message.text}")
-    response = tf.escape_markdown_v2('O real não vale nada, é uma bosta essa moeda estado de merda!')
-    tf.send_markdown(bot, message.chat.id, response)
-    logging.info(f"Resposta enviada para @{username}: {response}")
-    logging.debug(f"Resposta completa enviada para @{username}: {response}")
+    try:
+        escaped_message = tf.escape_markdown_v2("O real não vale nada, é uma bosta essa moeda estado de merda!")
+        response_text = f"**{escaped_message}**"
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+        logging.info(f"Resposta enviada para @{username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+    except Exception as e:
+        error_msg = f"[ERROR] Inesperado no handler /real para @{username}: {str(e)}"
+        logging.error(error_msg, exc_info=True)
+        response_text = tf.escape_markdown_v2("Erro ao processar o comando /real. Tente novamente!")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
+        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
 @bot.message_handler(commands=['euro'])
 def euro_message(message):
@@ -956,18 +976,43 @@ def euro_message(message):
 
     try:
         response = requests.get(url, timeout=10)
+        logging.debug(f"Resposta da API para /euro: status_code={response.status_code}")
         response.raise_for_status()
         euro_data = response.json()
+        logging.debug(f"Dados da API: {euro_data}")
         valor_euro = euro_data['EUR']['bid']
-        response_text = f"O valor atual do euro em reais é {tf.bold_md(f'R$ {valor_euro}')}"
-        tf.send_markdown(bot, message.chat.id, response_text)
+        escaped_valor = tf.escape_markdown_v2(f"R$ {valor_euro}")
+        response_text = f"O valor atual do euro em reais é **{escaped_valor}**"
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
     except (requests.exceptions.RequestException, KeyError, ValueError) as e:
         error_msg = f"[ERROR] Euro API para @{username}: {str(e)}"
-        logging.error(error_msg)
+        logging.error(error_msg, exc_info=True)
         response_text = tf.escape_markdown_v2("Erro ao consultar a cotação do euro. Tente novamente!")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
+        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+    except Exception as e:
+        error_msg = f"[ERROR] Inesperado no handler /euro para @{username}: {str(e)}"
+        logging.error(error_msg, exc_info=True)
+        response_text = tf.escape_markdown_v2("Erro inesperado ao consultar o euro. Tente novamente!")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
@@ -983,15 +1028,39 @@ def dolar_message(message):
         response.raise_for_status()
         dolar_data = response.json()
         valor_dolar = dolar_data['USD']['bid']
-        response_text = f"O valor atual do dólar em reais é {tf.bold_md(f'R$ {valor_dolar}')}"
-        tf.send_markdown(bot, message.chat.id, response_text)
+        # Escapa o valor do dólar para garantir que pontos sejam tratados
+        escaped_valor = tf.escape_markdown_v2(f"R$ {valor_dolar}")
+        response_text = f"O valor atual do dólar em reais é *{escaped_valor}*"
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
     except (requests.exceptions.RequestException, KeyError, ValueError) as e:
         error_msg = f"[ERROR] Dolar API para @{username}: {str(e)}"
         logging.error(error_msg)
         response_text = tf.escape_markdown_v2("Erro ao consultar a cotação do dólar. Tente novamente!")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
+        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+    except Exception as e:
+        error_msg = f"[ERROR] Inesperado no handler /dolar para @{username}: {str(e)}"
+        logging.error(error_msg)
+        response_text = tf.escape_markdown_v2("Erro inesperado ao consultar o dólar. Tente novamente!")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
@@ -1004,42 +1073,75 @@ def bitcoin_price(message):
 
     try:
         response = requests.get(url, timeout=10)
+        logging.debug(f"Resposta da API para /btc: status_code={response.status_code}")
         response.raise_for_status()
         data = response.json()
-
+        logging.debug(f"Dados da API: {data}")
         if 'data' in data and 'priceUsd' in data['data']:
             price = round(float(data['data']['priceUsd']), 2)
             formatted_price = format_price(price)
-            response_text = f"Cotação atual do Bitcoin em dólar: {tf.bold_md(f'${formatted_price}')}"
-            tf.send_markdown(bot, message.chat.id, response_text)
+            escaped_price = tf.escape_markdown_v2(f"${formatted_price}")
+            response_text = f"Cotação atual do Bitcoin em dólar: **{escaped_price}**"
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
             logging.info(f"Resposta enviada para @{username}: {response_text}")
             logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
         else:
             error_msg = data.get('data', {}).get('message', 'Resposta inesperada da API')
             response_text = tf.escape_markdown_v2(f"Erro ao obter cotação do Bitcoin: {error_msg}")
-            tf.send_markdown(bot, message.chat.id, response_text)
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
             logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
             logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
-
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code if e.response else "Unknown"
         response_text = tf.escape_markdown_v2(f"Erro ao consultar Bitcoin: Problema na API (HTTP {status_code})")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
     except requests.exceptions.RequestException as e:
         response_text = tf.escape_markdown_v2("Erro ao consultar Bitcoin: Falha na conexão com a API")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
     except (KeyError, TypeError, ValueError) as e:
         response_text = tf.escape_markdown_v2("Erro ao consultar Bitcoin: Resposta inválida da API")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
     except Exception as e:
+        error_msg = f"[ERROR] Inesperado no handler /btc para @{username}: {str(e)}"
+        logging.error(error_msg, exc_info=True)
         response_text = tf.escape_markdown_v2("Erro inesperado ao consultar Bitcoin. Tente novamente!")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
@@ -1052,42 +1154,75 @@ def handle_xmr(message):
 
     try:
         response = requests.get(url, timeout=10)
+        logging.debug(f"Resposta da API para /xmr: status_code={response.status_code}")
         response.raise_for_status()
         data = response.json()
-
+        logging.debug(f"Dados da API: {data}")
         if 'data' in data and 'priceUsd' in data['data']:
             price = round(float(data['data']['priceUsd']), 2)
             formatted_price = format_price(price)
-            response_text = f"Cotação atual do Monero em dólar: {tf.bold_md(f'${formatted_price}')}"
-            tf.send_markdown(bot, message.chat.id, response_text)
+            escaped_price = tf.escape_markdown_v2(f"${formatted_price}")
+            response_text = f"Cotação atual do Monero em dólar: **{escaped_price}**"
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
             logging.info(f"Resposta enviada para @{username}: {response_text}")
             logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
         else:
             error_msg = data.get('data', {}).get('message', 'Resposta inesperada da API')
             response_text = tf.escape_markdown_v2(f"Erro ao obter cotação do Monero: {error_msg}")
-            tf.send_markdown(bot, message.chat.id, response_text)
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
             logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
             logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
-
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code if e.response else "Unknown"
         response_text = tf.escape_markdown_v2(f"Erro ao consultar Monero: Problema na API (HTTP {status_code})")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
     except requests.exceptions.RequestException as e:
         response_text = tf.escape_markdown_v2("Erro ao consultar Monero: Falha na conexão com a API")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
     except (KeyError, TypeError, ValueError) as e:
         response_text = tf.escape_markdown_v2("Erro ao consultar Monero: Resposta inválida da API")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
     except Exception as e:
+        error_msg = f"[ERROR] Inesperado no handler /xmr para @{username}: {str(e)}"
+        logging.error(error_msg, exc_info=True)
         response_text = tf.escape_markdown_v2("Erro inesperado ao consultar Monero. Tente novamente!")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
@@ -1210,7 +1345,10 @@ def imagem_command(message):
             "prompt": prompt,
             "n": 1
         }
+        start_time = time.time()  # Inicia a medição do tempo
         resp = requests.post(API_URL, json=payload, headers=headers, timeout=15)
+        end_time = time.time()  # Finaliza a medição do tempo
+        time_taken = round(end_time - start_time, 2)  # Tempo em segundos, com 2 casas decimais
         resp.raise_for_status()
         data = resp.json()
         image_url = data["data"][0]["url"]
@@ -1228,7 +1366,7 @@ def imagem_command(message):
     try:
         caption = (
             f"🖼️ {tf.italic(tf.escape_html(f'Prompt: {prompt}'))}\n"
-            f"{tf.italic(tf.escape_html('Gerada com xAI'))}"
+            f"{tf.italic(tf.escape_html(f'Gerada com xAI em {time_taken} segundos'))}"
         )
         sent_message = bot.send_photo(
             chat_id=message.chat.id,
@@ -1239,7 +1377,7 @@ def imagem_command(message):
         )
         update_chat_memory(sent_message)
         last_image_prompt[chat_id] = prompt
-        logging.info(f"Imagem enviada para @{username} (prompt: {prompt})")
+        logging.info(f"Imagem enviada para @{username} (prompt: {prompt}, time_taken: {time_taken}s)")
         logging.debug(f"Imagem completa enviada para @{username} (prompt: {prompt}, caption: {caption})")
     except Exception as e:
         error_detail = str(e)
