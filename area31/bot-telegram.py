@@ -391,14 +391,35 @@ def responder(message):
 
     chat_id = message.chat.id
     if len(text_lower) < 15 and chat_id in last_image_prompt:
-        response_text = tf.escape_markdown_v2(
-            f"Sua mensagem tá meio pequena! Você tá falando da imagem gerada com o prompt '{last_image_prompt[chat_id]}'? "
-            "Eu não vejo a imagem, mas posso descrever algo sobre esse tema ou responder algo mais específico se tu explicar melhor!"
-        )
-        tf.send_markdown(bot, message.chat.id, response_text, reply_to_message_id=message.message_id)
-        logging.info(f"Resposta enviada para @{target_username}: {response_text}")
-        logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
-        return
+        try:
+            escaped_prompt = tf.escape_markdown_v2(last_image_prompt[chat_id])
+            response_text = tf.escape_markdown_v2(
+                f"Sua mensagem tá meio pequena! Você tá falando da imagem gerada com o prompt '{escaped_prompt}'? "
+                "Eu não vejo a imagem, mas posso descrever algo sobre esse tema ou responder algo mais específico se tu explicar melhor!"
+            )
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                reply_to_message_id=message.message_id,
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta enviada para @{target_username}: {response_text[:100]}...")
+            logging.debug(f"Resposta completa enviada para @{target_username}: {response_text}")
+            return
+        except Exception as e:
+            error_msg = f"[ERROR] Falha ao responder mensagem curta após imagem para @{target_username}: {str(e)}"
+            logging.error(error_msg, exc_info=True)
+            response_text = tf.escape_markdown_v2("Ops, deu erro ao processar sua mensagem! Tente novamente.")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta de erro enviada para @{target_username}: {response_text}")
+            logging.debug(f"Resposta completa de erro enviada para @{target_username}: {response_text}")
+            return
 
     chat_history = get_chat_history(message, reply_limit=12)
     update_chat_memory(message)
@@ -618,7 +639,6 @@ def responder(message):
         tf.send_markdown(bot, message.chat.id, response_text)
         logging.info(f"Resposta de erro enviada para @{target_username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{target_username}: {response_text}")
-
 #######################################
 # Outros handlers permanecem inalterados
 @bot.message_handler(commands=['youtube'])
@@ -1392,7 +1412,9 @@ def imagem_command(message):
 # Inicia o bot
 try:
     logging.info("Iniciando polling do bot...")
-    bot.polling()
+    bot.polling(none_stop=True, interval=0, timeout=20)
 except Exception as e:
-    logging.error(f"[ERROR] Falha crítica no polling: {str(e)}")
-    raise
+    logging.error(f"[ERROR] Falha crítica no polling: {str(e)}", exc_info=True)
+    time.sleep(5)  # Aguarda antes de tentar reiniciar
+    logging.info("Tentando reiniciar o polling...")
+    bot.polling(none_stop=True, interval=0, timeout=20)
