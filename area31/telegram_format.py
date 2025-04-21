@@ -1,4 +1,3 @@
-# telegram_format.py
 import html
 from telebot import TeleBot
 
@@ -30,9 +29,10 @@ def list_items(items: list[str]) -> str:
 def escape_markdown_v2(text: str) -> str:
     """
     Escapa caracteres reservados do MarkdownV2, exceto marcadores de formatação.
-    Garante que *texto*, **texto**, ~texto~, etc., sejam preservados.
+    Garante que *texto*, _texto_, ~texto~, etc., sejam preservados.
+    Inclui '.' na lista de caracteres escapados para conformidade com MarkdownV2.
     """
-    reserved_chars = r'[]()~`>#+-=|{.!'  # Exclui *, _, ` de reserved_chars pra preservar formatação
+    reserved_chars = r'[_*[]()~`>#+-=|{}.!]'
     return ''.join('\\' + c if c in reserved_chars else c for c in text)
 
 def bold_md(text: str) -> str:
@@ -77,12 +77,13 @@ def send_html(bot: TeleBot, chat_id: int, html_text: str, **kwargs):
 
 def send_markdown(bot: TeleBot, chat_id: int, md_text: str, **kwargs):
     """
-    Envia mensagem com parse_mode=MarkdownV2.
-    Define disable_web_page_preview=True por padrão.
+    Envia mensagem com parse_mode=MarkdownV2, escapando todos os caracteres
+    problemáticos automaticamente.
     """
+    safe = escape_markdown_v2(md_text)
     bot.send_message(
         chat_id,
-        md_text,
+        safe,
         parse_mode="MarkdownV2",
         disable_web_page_preview=kwargs.pop("disable_web_page_preview", True),
         **kwargs

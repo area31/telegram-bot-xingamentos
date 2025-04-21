@@ -630,7 +630,12 @@ def youtube_search_command(message):
     query = message.text.replace("/youtube", "", 1).strip()
     if not query:
         response_text = tf.escape_markdown_v2("Por favor, execute o /youtube com algum termo de busca")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
         return
@@ -651,7 +656,12 @@ def youtube_search_command(message):
 
         if not items:
             response_text = tf.escape_markdown_v2("Não foram encontrados resultados para a sua pesquisa.")
-            tf.send_markdown(bot, message.chat.id, response_text)
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
             logging.info(f"Resposta enviada para @{username}: {response_text}")
             logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
             return
@@ -661,19 +671,43 @@ def youtube_search_command(message):
             title = item["snippet"].get("title", "").strip()
             vid = item["id"].get("videoId", "").strip()
             url = f"https://www.youtube.com/watch?v={vid}"
-            lines.append(f"{idx}. {tf.escape_markdown_v2(title)} — [{tf.escape_markdown_v2('Link')}]({url})")
+            # Escapa título e texto do link
+            # Escapa título, texto do link e URL (incluindo todos os pontos)
+            escaped_title     = tf.escape_markdown_v2(title)
+            escaped_link_text = tf.escape_markdown_v2("Link")
+            escaped_url       = tf.escape_markdown_v2(url)
+            lines.append(
+                f"{idx}\\. **{escaped_title}** \\— "
+                f"\\[{escaped_link_text}\\]\\({escaped_url}\\)"
+            )
 
-        header = f"🔎 *{tf.escape_markdown_v2(f'Resultados do YouTube para “{query}”:')}*\n"
+        # Escapa o texto do cabeçalho
+        escaped_query = tf.escape_markdown_v2(f'Resultados do YouTube para "{query}"')
+        header = f"🔎 **{escaped_query}**\\:\n"
         full_text = header + "\n".join(lines)
-        tf.send_markdown(bot, message.chat.id, full_text)
-        logging.info(f"Resposta enviada para @{username}: {full_text}")
+        # Envia a mensagem diretamente
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=full_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+        logging.info(f"Resposta enviada para @{username}: {full_text[:100]}...")
         logging.debug(f"Resposta completa enviada para @{username}: {full_text}")
     except Exception as e:
         logging.error(f"[ERROR] Handler /youtube para @{username}: {e}", exc_info=True)
         response_text = tf.escape_markdown_v2("Ops, algo deu errado no /youtube. Tente novamente mais tarde.")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+
+
+
 
 @bot.message_handler(commands=['search'])
 def search_command(message):
@@ -684,7 +718,12 @@ def search_command(message):
     query = message.text.replace("/search", "", 1).strip()
     if not query:
         response_text = tf.escape_markdown_v2("Por favor, execute o /search com algum termo de busca")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
         return
@@ -704,7 +743,12 @@ def search_command(message):
 
         if not results:
             response_text = tf.escape_markdown_v2("Não foram encontrados resultados para a sua pesquisa.")
-            tf.send_markdown(bot, message.chat.id, response_text)
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
             logging.info(f"Resposta enviada para @{username}: {response_text}")
             logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
             return
@@ -713,17 +757,35 @@ def search_command(message):
         for idx, item in enumerate(results[:5], start=1):
             title = item.get("title", "").strip()
             link = item.get("link", "").strip()
-            lines.append(f"{idx}. {tf.escape_markdown_v2(title)} — [{tf.escape_markdown_v2(link)}]({link})")
+            # Escapa título, texto do link, número do item e URL
+            escaped_title = tf.escape_markdown_v2(title)
+            escaped_link_text = tf.escape_markdown_v2("Link")
+            escaped_idx = tf.escape_markdown_v2(str(idx))
+            escaped_link = tf.escape_markdown_v2(link)
+            lines.append(f"{escaped_idx}\\. **{escaped_title}** \\— \\[{escaped_link_text}\\]\\({escaped_link}\\)")
 
-        header = f"🔎 *{tf.escape_markdown_v2(f'Resultados da pesquisa para “{query}”:')}*\n"
+        # Escapa o texto do cabeçalho
+        escaped_query = tf.escape_markdown_v2(f'Resultados da pesquisa para "{query}"')
+        header = f"🔎 **{escaped_query}**\\:\n"
         full_text = header + "\n".join(lines)
-        tf.send_markdown(bot, message.chat.id, full_text)
-        logging.info(f"Resposta enviada para @{username}: {full_text}")
+        # Envia a mensagem diretamente
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=full_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+        logging.info(f"Resposta enviada para @{username}: {full_text[:100]}...")
         logging.debug(f"Resposta completa enviada para @{username}: {full_text}")
     except Exception as e:
         logging.error(f"[ERROR] Handler /search para @{username}: {e}", exc_info=True)
         response_text = tf.escape_markdown_v2("Ops, algo deu errado no /search. Tente novamente mais tarde.")
-        tf.send_markdown(bot, message.chat.id, response_text)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
