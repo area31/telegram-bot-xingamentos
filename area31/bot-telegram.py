@@ -825,6 +825,7 @@ def help_message(message):
             "/btc - Exibe a cotação do Bitcoin em dólares",
             "/xmr - Exibe a cotação do Monero em dólares",
             "/tari - Exibe a cotação do Tari em dólares",
+            "/ouro - Exibe a cotação do ouro (Tether Gold) em dólares",
             "/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...",
             "/youtube - Exibe resultados de busca de vídeos no YouTube",
             "/search - Exibe resultados de busca no Google",
@@ -1166,6 +1167,110 @@ def bitcoin_price(message):
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
+
+@bot.message_handler(commands=['ouro'])
+def ouro_price(message):
+    username = message.from_user.username or "Unknown"
+    base_url = "https://rest.coincap.io/v3"
+    headers = {"Authorization": f"Bearer {COINCAP_API_KEY}"}
+    assets_url = f"{base_url}/assets?apiKey={COINCAP_API_KEY}"
+
+    try:
+        # Passo 1: Verificar se o Tether Gold está na lista de ativos
+        response = requests.get(assets_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        gold_data = next((asset for asset in data['data'] if asset['id'].lower() == 'tether-gold'), None)
+        if not gold_data:
+            logging.info(f"Tether Gold não está listado para @{username}")
+            response_text = tf.escape_markdown_v2("Ouro (Tether Gold) não está disponível na API da CoinCap.")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+            return
+
+        logging.info(f"Tether Gold está listado para @{username}")
+        
+        # Passo 2: Consultar o preço do Tether Gold
+        gold_id = gold_data['id']
+        url = f"{base_url}/assets/{gold_id}?apiKey={COINCAP_API_KEY}"
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        if 'data' in data and 'priceUsd' in data['data']:
+            price_per_oz = round(float(data['data']['priceUsd']), 2)
+            price_per_gram = price_per_oz / 31.1035
+            formatted_price_oz = f"{price_per_oz:.2f}"
+            formatted_price_gram = f"{price_per_gram:.2f}"
+            escaped_price_oz = tf.escape_markdown_v2(f"${formatted_price_oz}")
+            escaped_price_gram = tf.escape_markdown_v2(f"${formatted_price_gram}")
+            response_text = (
+                f"Cotação atual do ouro \\(Tether Gold\\) em dólar:\n"
+                f"**{escaped_price_oz}** por onça troy \\(31,1035 gramas\\)\n"
+                f"**{escaped_price_gram}** por grama"
+            )
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+
+        else:
+            logging.info(f"Tether Gold está listado, mas sem dados de preço para @{username}")
+            response_text = tf.escape_markdown_v2("Erro ao obter cotação do ouro (Tether Gold): Dados de preço não disponíveis.")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+
+    except requests.exceptions.HTTPError as e:
+        logging.info(f"Tether Gold não está listado ou erro na API para @{username}")
+        status_code = e.response.status_code if e.response else "Unknown"
+        response_text = tf.escape_markdown_v2(f"Erro ao consultar ouro (Tether Gold): Problema na API (HTTP {status_code})")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+
+    except requests.exceptions.RequestException:
+        logging.info(f"Tether Gold não está listado ou falha de conexão para @{username}")
+        response_text = tf.escape_markdown_v2("Erro ao consultar ouro (Tether Gold): Falha na conexão com a API")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+
+    except (KeyError, TypeError, ValueError):
+        logging.info(f"Tether Gold não está listado ou resposta inválida para @{username}")
+        response_text = tf.escape_markdown_v2("Erro ao consultar ouro (Tether Gold): Resposta inválida da API")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+
+    except Exception:
+        logging.info(f"Tether Gold: erro inesperado para @{username}")
+        response_text = tf.escape_markdown_v2("Erro inesperado ao consultar ouro (Tether Gold). Tente novamente!")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
 
 @bot.message_handler(commands=['tari'])
 def tari_price(message):
