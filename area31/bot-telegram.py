@@ -822,6 +822,7 @@ def help_message(message):
             "/xinga - Envia um xingamento aleatório",
             "/dolar - Exibe a cotação do dólar em reais",
             "/euro - Exibe a cotação do euro em reais",
+            "/bch - Exibe a cotação do Bitcoin Cash em dólares",
             "/btc - Exibe a cotação do Bitcoin em dólares",
             "/xmr - Exibe a cotação do Monero em dólares",
             "/tari - Exibe a cotação do Tari em dólares",
@@ -1167,6 +1168,102 @@ def bitcoin_price(message):
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
+
+@bot.message_handler(commands=['bch'])
+def bch_price(message):
+    username = message.from_user.username or "Unknown"
+    base_url = "https://rest.coincap.io/v3"
+    headers = {"Authorization": f"Bearer {COINCAP_API_KEY}"}
+    assets_url = f"{base_url}/assets?apiKey={COINCAP_API_KEY}"
+
+    try:
+        # Passo 1: Verificar se o Bitcoin Cash está na lista de ativos
+        response = requests.get(assets_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        bch_data = next((asset for asset in data['data'] if asset['id'].lower() == 'bitcoin-cash'), None)
+        if not bch_data:
+            logging.info(f"Bitcoin Cash não está listado para @{username}")
+            response_text = tf.escape_markdown_v2("Bitcoin Cash não está disponível na API da CoinCap.")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+            return
+
+        logging.info(f"Bitcoin Cash está listado para @{username}")
+
+        # Passo 2: Consultar o preço do Bitcoin Cash
+        bch_id = bch_data['id']
+        url = f"{base_url}/assets/{bch_id}?apiKey={COINCAP_API_KEY}"
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        if 'data' in data and 'priceUsd' in data['data']:
+            price = round(float(data['data']['priceUsd']), 2)
+            formatted_price = f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            escaped_price = tf.escape_markdown_v2(f"${formatted_price}")
+            response_text = f"Cotação atual do Bitcoin Cash em dólar: {escaped_price}"
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+        else:
+            logging.info(f"Bitcoin Cash está listado, mas sem dados de preço para @{username}")
+            response_text = tf.escape_markdown_v2("Erro ao obter cotação do Bitcoin Cash: Dados de preço não disponíveis.")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response_text,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+
+    except requests.exceptions.HTTPError as e:
+        logging.info(f"Bitcoin Cash não está listado ou erro na API para @{username}")
+        status_code = e.response.status_code if e.response else "Unknown"
+        response_text = tf.escape_markdown_v2(f"Erro ao consultar Bitcoin Cash: Problema na API (HTTP {status_code})")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+
+    except requests.exceptions.RequestException:
+        logging.info(f"Bitcoin Cash não está listado ou falha de conexão para @{username}")
+        response_text = tf.escape_markdown_v2("Erro ao consultar Bitcoin Cash: Falha na conexão com a API")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+
+    except (KeyError, TypeError, ValueError):
+        logging.info(f"Bitcoin Cash não está listado ou resposta inválida para @{username}")
+        response_text = tf.escape_markdown_v2("Erro ao consultar Bitcoin Cash: Resposta inválida da API")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+
+    except Exception:
+        logging.info(f"Bitcoin Cash: erro inesperado para @{username}")
+        response_text = tf.escape_markdown_v2("Erro inesperado ao consultar Bitcoin Cash. Tente novamente!")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
 
 @bot.message_handler(commands=['ouro'])
 def ouro_price(message):
