@@ -12,3 +12,5 @@ telebot
 tqdm
 yarl
 requests
+python-telegram-bot
+telegram-text
