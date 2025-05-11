@@ -1,8 +1,10 @@
 #!/sbin/openrc-run
+# Copyright 2023 Gentoo Authors
+# Distributed under the terms of the GNU General Public License v2
 #set -x
 
 USER="morfetico"
-GROUP="alta-linguagem"
+GROUP="area31"
 BOTDIR="$(getent passwd ${USER} | cut -d: -f6)/${GROUP}"
 
 depend() {
@@ -11,7 +13,7 @@ need net
 
 start() {
 ebegin "Iniciando o Bot-Telegram \"${USER}\"/${GROUP}"
-echo -e "while true; do\ncd ${BOTDIR} ; python3.12 ${BOTDIR}/bot-telegram.py\ndone" > ${BOTDIR}/start.sh
+echo -e "while true; do\ncd ${BOTDIR} ; python3.13 ${BOTDIR}/bot-telegram.py\ndone" > ${BOTDIR}/start.sh
 chmod +x ${BOTDIR}/start.sh
 su ${USER} -c "nohup ${BOTDIR}/start.sh >> ${BOTDIR}/bot-telegram.log & &> /dev/null"  &> /dev/null
 echo -e "" &> /dev/null

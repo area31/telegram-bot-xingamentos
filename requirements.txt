@@ -1,0 +1,14 @@
+aiohttp
+aiosignal
+async_timeout
+attr
+attrs
+charset_normalizer
+frozenlist
+multidict
+openai
+pyTelegramBotAPI
+telebot
+tqdm
+yarl
+requests

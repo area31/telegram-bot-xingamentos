@@ -10,15 +10,12 @@ git clone https://github.com/area31/telegram-bot-xingamentos.git
 ## Install deps:
 
 ```bash
-pip3 install pyTelegramBotAPI --user
-pip3 install openai --user
-pip3 install attrs --user
-pip3 install aiohttp --user
+pip3 install --target ~/.local/lib/python3.13/site-packages/ -r requirements.txt --upgrade
 ```
 
 ## Usage
 ```bash
-python area31/bot-telegram.py
+python3.13 area31/bot-telegram.py
 ```
 
 ## Import DB using txt file

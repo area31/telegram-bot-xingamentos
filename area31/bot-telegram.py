@@ -13,7 +13,7 @@ from urllib.parse import quote_plus
 from typing import Tuple, Optional
 
 # Adiciona o caminho pras bibliotecas locais
-sys.path.append('/home/morfetico/.local/lib/python3.12/site-packages/')
+sys.path.append('/home/morfetico/.local/lib/python3.13/site-packages/')
 import telebot
 import shutil
 import openai
