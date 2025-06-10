@@ -1614,6 +1614,7 @@ def add_message(message):
             )
             logging.info(f"Resposta texto puro enviada para @{username}: Erro ao adicionar o xingamento")
 
+
 @bot.message_handler(commands=['xinga'])
 def random_message(message):
     username = message.from_user.username or "Unknown"
@@ -1663,14 +1664,14 @@ def random_message(message):
                 logging.info(f"Resposta enviada para @{target_user} (reply): {frase_escolhida}")
                 logging.debug(f"Resposta completa enviada para @{target_user} (reply): {frase_escolhida}")
             except Exception as e:
-                logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{target_user}: {str(e)}")
+                logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{target_user}: {str(e)}", exc_info=True)
                 bot.send_message(
                     chat_id=message.chat.id,
                     text=frase_escolhida.replace('\\', ''),
                     reply_to_message_id=message.reply_to_message.message_id,
                     disable_web_page_preview=True
                 )
-                logging.info(f"Resposta texto puro enviada para @{target_user} (reply): {frase_escolhida}")
+                logging.info(f"Resposta texto puro enviada para @{target_user} (reply): {frase_escolhida.replace('\\', '')}")
         else:
             command_parts = message.text.split(maxsplit=2)
             if len(command_parts) > 1 and command_parts[1].startswith('@'):
@@ -1686,13 +1687,13 @@ def random_message(message):
                     logging.info(f"Resposta enviada para @{target_user}: {response}")
                     logging.debug(f"Resposta completa enviada para @{target_user}: {response}")
                 except Exception as e:
-                    logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{target_user}: {str(e)}")
+                    logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{target_user}: {str(e)}", exc_info=True)
                     bot.send_message(
                         chat_id=message.chat.id,
                         text=f"{command_parts[1]} {frase_escolhida.replace('\\', '')}",
                         disable_web_page_preview=True
                     )
-                    logging.info(f"Resposta texto puro enviada para @{target_user}: {response}")
+                    logging.info(f"Resposta texto puro enviada para @{target_user}: {command_parts[1]} {frase_escolhida.replace('\\', '')}")
             else:
                 target_user = username
                 try:
@@ -1705,16 +1706,16 @@ def random_message(message):
                     logging.info(f"Resposta enviada para @{target_user}: {frase_escolhida}")
                     logging.debug(f"Resposta completa enviada para @{target_user}: {frase_escolhida}")
                 except Exception as e:
-                    logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{target_user}: {str(e)}")
+                    logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{target_user}: {str(e)}", exc_info=True)
                     bot.send_message(
                         chat_id=message.chat.id,
                         text=frase_escolhida.replace('\\', ''),
                         disable_web_page_preview=True
                     )
-                    logging.info(f"Resposta texto puro enviada para @{target_user}: {frase_escolhida}")
+                    logging.info(f"Resposta texto puro enviada para @{target_user}: {frase_escolhida.replace('\\', '')}")
 
     except sqlite3.Error as e:
-        logging.error(f"[ERROR] Falha ao acessar banco de dados para @{username}: {str(e)}")
+        logging.error(f"[ERROR] Falha ao acessar banco de dados para @{username}: {str(e)}", exc_info=True)
         response = escape_md_v2('Erro ao buscar xingamentos, tente novamente')
         try:
             bot.send_message(
@@ -1726,7 +1727,7 @@ def random_message(message):
             logging.info(f"Resposta enviada para @{username}: {response}")
             logging.debug(f"Resposta completa enviada para @{username}: {response}")
         except Exception as send_error:
-            logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(send_error)}")
+            logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(send_error)}", exc_info=True)
             bot.send_message(
                 chat_id=message.chat.id,
                 text='Erro ao buscar xingamentos, tente novamente',
