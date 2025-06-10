@@ -142,7 +142,9 @@ logging.debug("Token da xAI lido com sucesso")
 # Configuração do bot
 BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'xai')
 XAI_MODEL = config_bot['DEFAULT'].get('XAI_MODEL', 'grok-3-mini-fast-beta')
-logging.debug(f"Configuração do bot: BOT_AI={BOT_AI}, XAI_MODEL={XAI_MODEL}")
+IMAGE_AI = config_bot['DEFAULT'].get('IMAGE_AI', 'xai')  # Nova configuração para geração de imagens
+OPENAI_IMAGE_MODEL = config_bot['DEFAULT'].get('OPENAI_IMAGE_MODEL', 'dall-e-2')
+logging.debug(f"Configuração do bot: BOT_AI={BOT_AI}, XAI_MODEL={XAI_MODEL}, IMAGE_AI={IMAGE_AI}, OPENAI_IMAGE_MODEL={OPENAI_IMAGE_MODEL}")
 
 # Parâmetros gerais pra IA
 MAX_TOKENS = 1000
@@ -1891,6 +1893,59 @@ def responder_boa_cabelo(message):
     logging.info(f"Resposta enviada para @{username}: {response}")
     logging.debug(f"Resposta completa enviada para @{username}: {response}")
 
+
+
+
+# Cache em memória para imagens
+image_cache = {}
+
+def imagem_advanced(prompt: str, model_priority=["dall-e-3", "dall-e-2", "gpt-4o"], size="1024x1024", retries=3):
+    """
+    Gera imagem com fallback automático entre modelos, retry com backoff exponencial e cache.
+    """
+    import time
+    from openai import OpenAI, OpenAIError
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    # Verifica cache em memória
+    cache_key = hash((prompt, tuple(model_priority), size))
+    if cache_key in image_cache:
+        logging.debug(f"Imagem encontrada no cache para prompt: {prompt}")
+        return image_cache[cache_key]
+
+    attempt = 0
+    for model in model_priority:
+        for try_i in range(retries):
+            try:
+                quality = "standard" if model == "dall-e-3" else None
+                size = "1024x1024" if model in ["dall-e-3", "gpt-4o"] else "512x512"
+                resp = client.images.generate(
+                    model=model,
+                    prompt=prompt,
+                    n=1,
+                    size=size,
+                    quality=quality,
+                    response_format="url"
+                )
+                url = resp.data[0].url
+                # Armazena em cache
+                image_cache[cache_key] = url
+                logging.debug(f"Imagem gerada com modelo {model}: {url}")
+                return url
+            except OpenAIError as e:
+                error_detail = f"{type(e).__name__}: Error code: {getattr(e, 'status_code', 'N/A')} - {getattr(e, 'body', str(e))}"
+                # Se erro for BadRequest, passa para próximo modelo
+                if "BadRequestError" in str(e):
+                    logging.info(f"Erro com modelo {model}, tentando próximo modelo: {error_detail}")
+                    break
+                # Para outros erros, retry com backoff
+                logging.warning(f"Tentativa {try_i + 1} falhou com modelo {model}: {error_detail}")
+                time.sleep(2 ** try_i)
+                continue
+        attempt += 1
+    raise Exception(f"Falha ao gerar imagem com todos os modelos: {error_detail}")
+
 @bot.message_handler(commands=['imagem'])
 def imagem_command(message):
     username = message.from_user.username or "Unknown"
@@ -1902,7 +1957,35 @@ def imagem_command(message):
     if not prompt:
         response_text = tf.escape_html(
             "Por favor, forneça uma descrição para a imagem.\n"
-            "Exemplo: /imagem porco deitado na grama"
+            "Exemplo: /imagem um copo de leite em uma mesa"
+        )
+        tf.send_html(bot, message.chat.id, response_text)
+        logging.info(f"Resposta enviada para @{username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+        return
+
+    # Enviar mensagem inicial de espera apenas para prompts válidos
+    try:
+        if IMAGE_AI.lower() == "xai":
+            wait_message = "Sua imagem pode levar até 20 segundos para ser gerada. Aguarde, estou processando com xAI..."
+        else:  # openai
+            wait_message = "Sua imagem pode levar até 2 minutos para ser gerada. Aguarde, estou processando com OpenAI..."
+        response_text = tf.escape_html(wait_message)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+        logging.info(f"Mensagem de espera enviada para @{username}: {wait_message}")
+    except Exception as e:
+        logging.error(f"[ERROR] Falha ao enviar mensagem de espera para @{username}: {str(e)}")
+
+    # Validação do prompt
+    if len(prompt) < 15 or len(prompt.split()) < 3:
+        response_text = tf.escape_html(
+            "O prompt é muito curto ou vago. Forneça uma descrição mais detalhada com pelo menos 3 palavras.\n"
+            "Exemplo: /imagem um copo de leite em uma mesa"
         )
         tf.send_html(bot, message.chat.id, response_text)
         logging.info(f"Resposta enviada para @{username}: {response_text}")
@@ -1912,59 +1995,76 @@ def imagem_command(message):
     update_chat_memory(message)
 
     try:
-        API_URL = "https://api.x.ai/v1/images/generations"
-        headers = {
-            "Authorization": f"Bearer {XAI_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "grok-2-image",
-            "prompt": prompt,
-            "n": 1
-        }
-        start_time = time.time()  # Inicia a medição do tempo
-        resp = requests.post(API_URL, json=payload, headers=headers, timeout=15)
-        end_time = time.time()  # Finaliza a medição do tempo
-        time_taken = round(end_time - start_time, 2)  # Tempo em segundos, com 2 casas decimais
-        resp.raise_for_status()
-        data = resp.json()
-        image_url = data["data"][0]["url"]
+        start_time = time.time()
+        image_url = None
+
+        if IMAGE_AI.lower() == "openai":
+            # Usar OPENAI_IMAGE_MODEL como prioridade principal
+            model_priority = [OPENAI_IMAGE_MODEL] + [m for m in ["dall-e-3", "dall-e-2", "gpt-4o"] if m != OPENAI_IMAGE_MODEL]
+            image_url = imagem_advanced(prompt, model_priority=model_priority, size="1024x1024", retries=3)
+
+        elif IMAGE_AI.lower() == "xai":
+            try:
+                API_URL = "https://api.x.ai/v1/images/generations"
+                headers = {
+                    "Authorization": f"Bearer {XAI_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": "grok-2-image",
+                    "prompt": prompt,
+                    "n": 1
+                }
+                resp = requests.post(API_URL, json=payload, headers=headers, timeout=15)
+                resp.raise_for_status()
+                data = resp.json()
+                image_url = data["data"][0]["url"]
+                logging.debug(f"Imagem gerada pela xAI para @{username}: {image_url}")
+            except requests.exceptions.RequestException as e:
+                error_detail = f"requests.RequestException: {str(e)}"
+                raise Exception(error_detail)
+
+        else:
+            raise ValueError(f"Configuração inválida para IMAGE_AI: {IMAGE_AI}. Use 'openai' ou 'xai'.")
+
+        end_time = time.time()
+        time_taken = round(end_time - start_time, 2)
+
+        try:
+            caption = (
+                f"🖼️ {tf.italic(tf.escape_html(f'Prompt: {prompt}'))}\n"
+                f"{tf.italic(tf.escape_html(f'Gerada com {IMAGE_AI.upper()} em {time_taken} segundos'))}"
+            )
+            sent_message = bot.send_photo(
+                chat_id=message.chat.id,
+                photo=image_url,
+                caption=caption,
+                parse_mode="HTML",
+                reply_to_message_id=message.message_id
+            )
+            update_chat_memory(sent_message)
+            last_image_prompt[chat_id] = prompt
+            logging.info(f"Imagem enviada para @{username} (prompt: {prompt}, time_taken: {time_taken}s, AI: {IMAGE_AI})")
+            logging.debug(f"Imagem completa enviada para @{username} (prompt: {prompt}, caption: {caption})")
+        except Exception as e:
+            error_detail = f"Erro ao enviar a imagem: {str(e)}"
+            if isinstance(e, requests.exceptions.RequestException):
+                error_detail = f"requests.RequestException: {str(e)}"
+            logging.error(f"[ERROR] Falha ao enviar imagem para @{username}: {error_detail}", exc_info=True)
+            response_text = tf.escape_html(f"❌ Erro ao enviar a imagem. Motivo: {error_detail}. Tente novamente mais tarde.")
+            tf.send_html(bot, message.chat.id, response_text)
+            logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
+            logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+
     except Exception as e:
         error_detail = str(e)
-        if isinstance(e, requests.exceptions.RequestException):
-            error_detail = f"Erro na requisição à API da xAI: {str(e)}"
         logging.error(f"[ERROR] Falha ao gerar imagem para @{username}: {error_detail}", exc_info=True)
         response_text = tf.escape_html(f"❌ Não consegui gerar a imagem. Motivo: {error_detail}. Tente novamente mais tarde.")
         tf.send_html(bot, message.chat.id, response_text)
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
-        return
 
-    try:
-        caption = (
-            f"🖼️ {tf.italic(tf.escape_html(f'Prompt: {prompt}'))}\n"
-            f"{tf.italic(tf.escape_html(f'Gerada com xAI em {time_taken} segundos'))}"
-        )
-        sent_message = bot.send_photo(
-            chat_id=message.chat.id,
-            photo=image_url,
-            caption=caption,
-            parse_mode="HTML",
-            reply_to_message_id=message.message_id
-        )
-        update_chat_memory(sent_message)
-        last_image_prompt[chat_id] = prompt
-        logging.info(f"Imagem enviada para @{username} (prompt: {prompt}, time_taken: {time_taken}s)")
-        logging.debug(f"Imagem completa enviada para @{username} (prompt: {prompt}, caption: {caption})")
-    except Exception as e:
-        error_detail = str(e)
-        if isinstance(e, requests.exceptions.RequestException):
-            error_detail = f"Erro ao enviar a imagem: {str(e)}"
-        logging.error(f"[ERROR] Falha ao enviar imagem para @{username}: {error_detail}", exc_info=True)
-        response_text = tf.escape_html(f"❌ Erro ao enviar a imagem. Motivo: {error_detail}. Verifique a conexão ou tente novamente.")
-        tf.send_html(bot, message.chat.id, response_text)
-        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+
 
 # Inicia o bot
 try:
