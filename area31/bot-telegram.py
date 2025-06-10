@@ -1895,7 +1895,6 @@ def responder_boa_cabelo(message):
 
 
 
-
 # Cache em memória para imagens
 image_cache = {}
 
@@ -1918,16 +1917,23 @@ def imagem_advanced(prompt: str, model_priority=["dall-e-3", "dall-e-2", "gpt-4o
     for model in model_priority:
         for try_i in range(retries):
             try:
-                quality = "standard" if model == "dall-e-3" else None
-                size = "1024x1024" if model in ["dall-e-3", "gpt-4o"] else "512x512"
-                resp = client.images.generate(
-                    model=model,
-                    prompt=prompt,
-                    n=1,
-                    size=size,
-                    quality=quality,
-                    response_format="url"
-                )
+                # Construir argumentos dinamicamente
+                kwargs = {
+                    "model": model,
+                    "prompt": prompt,
+                    "n": 1,
+                    "response_format": "url"
+                }
+                # Ajustar size e quality com base no modelo
+                if model == "dall-e-3":
+                    kwargs["size"] = "1024x1024"
+                    kwargs["quality"] = "standard"
+                elif model == "dall-e-2":
+                    kwargs["size"] = "512x512"  # Mais econômico
+                else:  # gpt-4o ou outros
+                    kwargs["size"] = "1024x1024"
+
+                resp = client.images.generate(**kwargs)
                 url = resp.data[0].url
                 # Armazena em cache
                 image_cache[cache_key] = url
@@ -2001,7 +2007,7 @@ def imagem_command(message):
         if IMAGE_AI.lower() == "openai":
             # Usar OPENAI_IMAGE_MODEL como prioridade principal
             model_priority = [OPENAI_IMAGE_MODEL] + [m for m in ["dall-e-3", "dall-e-2", "gpt-4o"] if m != OPENAI_IMAGE_MODEL]
-            image_url = imagem_advanced(prompt, model_priority=model_priority, size="1024x1024", retries=3)
+            image_url = imagem_advanced(prompt, model_priority=model_priority, retries=3)
 
         elif IMAGE_AI.lower() == "xai":
             try:
@@ -2059,10 +2065,11 @@ def imagem_command(message):
     except Exception as e:
         error_detail = str(e)
         logging.error(f"[ERROR] Falha ao gerar imagem para @{username}: {error_detail}", exc_info=True)
-        response_text = tf.escape_html(f"❌ Não consegui gerar a imagem. Motivo: {error_detail}. Tente novamente mais tarde.")
+        response_text = tf.escape_html(f"❌ Não consegui gerar a imagem. Motivo: {error_detail}")
         tf.send_html(bot, message.chat.id, response_text)
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+
 
 
 
