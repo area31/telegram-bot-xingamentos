@@ -922,44 +922,6 @@ def list_message(message):
         logging.info(f"Resposta de erro enviada para @{username}: {response}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response}")
 
-@bot.message_handler(commands=['xinga'])
-def random_message(message):
-    username = message.from_user.username or "Unknown"
-    logging.info(f"Mensagem recebida de @{username}: {message.text}")
-    logging.debug(f"Pergunta completa de @{username}: {message.text}")
-    conn = sqlite3.connect('frases.db')
-    c = conn.cursor()
-    c.execute("SELECT frase FROM frases")
-    frases = c.fetchall()
-    conn.close()
-
-    if not frases:
-        response = tf.escape_markdown_v2('Não há frases cadastradas.')
-        tf.send_markdown(bot, message.chat.id, response)
-        logging.info(f"Resposta enviada para @{username}: {response}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response}")
-        return
-
-    frase_escolhida = tf.escape_markdown_v2(random.choice(frases)[0])
-
-    if message.reply_to_message and hasattr(message.reply_to_message, 'from_user'):
-        target_user = message.reply_to_message.from_user.username or "Unknown"
-        response = frase_escolhida
-        tf.send_markdown(bot, message.chat.id, response, reply_to_message_id=message.reply_to_message.message_id)
-        logging.info(f"Resposta enviada para @{target_user} (reply): {response}")
-        logging.debug(f"Resposta completa enviada para @{target_user} (reply): {response}")
-    else:
-        command_parts = message.text.split(maxsplit=2)
-        if len(command_parts) > 1 and command_parts[1].startswith('@'):
-            target_user = command_parts[1].lstrip('@') or "Unknown"
-            response = f"{tf.escape_markdown_v2(command_parts[1])} {frase_escolhida}"
-        else:
-            target_user = username
-            response = frase_escolhida
-        tf.send_markdown(bot, message.chat.id, response)
-        logging.info(f"Resposta enviada para @{target_user}: {response}")
-        logging.debug(f"Resposta completa enviada para @{target_user}: {response}")
-
 
 @bot.message_handler(commands=['real'])
 def reais_message(message):
@@ -1560,81 +1522,361 @@ def handle_xmr(message):
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
+
 @bot.message_handler(commands=['add'])
 def add_message(message):
     username = message.from_user.username or "Unknown"
     logging.info(f"Mensagem recebida de @{username}: {message.text}")
     logging.debug(f"Pergunta completa de @{username}: {message.text}")
+
     try:
         frase = message.text.split(' ', 1)[1].strip()
     except IndexError:
-        response = tf.escape_markdown_v2('Comando inválido. Use /add e insira o xingamento')
-        tf.send_markdown(bot, message.chat.id, response)
-        logging.info(f"Resposta enviada para @{username}: {response}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        response = escape_md_v2('Use /add e insira o xingamento')
+        try:
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta enviada para @{username}: {response}")
+            logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        except Exception as e:
+            logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(e)}")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text='Use /add e insira o xingamento',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta texto puro enviada para @{username}: Use /add e insira o xingamento")
         return
 
     if len(frase) > 150:
-        response = tf.escape_markdown_v2('Xingamento muito longo, por favor use até 150 caracteres')
-        tf.send_markdown(bot, message.chat.id, response)
-        logging.info(f"Resposta enviada para @{username}: {response}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        response = escape_md_v2('Xingamento muito longo, por favor use até 150 caracteres')
+        try:
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta enviada para @{username}: {response}")
+            logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        except Exception as e:
+            logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(e)}")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text='Xingamento muito longo, por favor use até 150 caracteres',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta texto puro enviada para @{username}: Xingamento muito longo")
         return
 
-    insert_frase(frase)
-    response = tf.escape_markdown_v2('Xingamento adicionado com sucesso! Seu zuero!')
-    tf.send_markdown(bot, message.chat.id, response)
-    logging.info(f"Resposta enviada para @{username}: {response}")
-    logging.debug(f"Resposta completa enviada para @{username}: {response}")
+    try:
+        insert_frase(frase)
+        response = escape_md_v2('Xingamento adicionado com sucesso seu zuero')
+        try:
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta enviada para @{username}: {response}")
+            logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        except Exception as e:
+            logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(e)}")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text='Xingamento adicionado com sucesso seu zuero',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta texto puro enviada para @{username}: Xingamento adicionado com sucesso")
+    except sqlite3.Error as e:
+        logging.error(f"[ERROR] Falha ao inserir frase no banco de dados para @{username}: {str(e)}")
+        response = escape_md_v2('Erro ao adicionar o xingamento, tente novamente')
+        try:
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta enviada para @{username}: {response}")
+            logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        except Exception as send_error:
+            logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(send_error)}")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text='Erro ao adicionar o xingamento, tente novamente',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta texto puro enviada para @{username}: Erro ao adicionar o xingamento")
+
+@bot.message_handler(commands=['xinga'])
+def random_message(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
+    logging.debug(f"Pergunta completa de @{username}: {message.text}")
+
+    try:
+        conn = sqlite3.connect('frases.db')
+        c = conn.cursor()
+        c.execute("SELECT frase FROM frases")
+        frases = c.fetchall()
+        conn.close()
+
+        if not frases:
+            response = escape_md_v2('Não há frases cadastradas')
+            try:
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=response,
+                    parse_mode='MarkdownV2',
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta enviada para @{username}: {response}")
+                logging.debug(f"Resposta completa enviada para @{username}: {response}")
+            except Exception as e:
+                logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(e)}")
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text='Não há frases cadastradas',
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta texto puro enviada para @{username}: Não há frases cadastradas")
+            return
+
+        frase_escolhida = escape_md_v2(random.choice(frases)[0])
+
+        if message.reply_to_message and hasattr(message.reply_to_message, 'from_user'):
+            target_user = message.reply_to_message.from_user.username or "Unknown"
+            try:
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=frase_escolhida,
+                    parse_mode='MarkdownV2',
+                    reply_to_message_id=message.reply_to_message.message_id,
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta enviada para @{target_user} (reply): {frase_escolhida}")
+                logging.debug(f"Resposta completa enviada para @{target_user} (reply): {frase_escolhida}")
+            except Exception as e:
+                logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{target_user}: {str(e)}")
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=frase_escolhida.replace('\\', ''),
+                    reply_to_message_id=message.reply_to_message.message_id,
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta texto puro enviada para @{target_user} (reply): {frase_escolhida}")
+        else:
+            command_parts = message.text.split(maxsplit=2)
+            if len(command_parts) > 1 and command_parts[1].startswith('@'):
+                target_user = command_parts[1].lstrip('@')
+                response = f"{escape_md_v2(command_parts[1])} {frase_escolhida}"
+                try:
+                    bot.send_message(
+                        chat_id=message.chat.id,
+                        text=response,
+                        parse_mode='MarkdownV2',
+                        disable_web_page_preview=True
+                    )
+                    logging.info(f"Resposta enviada para @{target_user}: {response}")
+                    logging.debug(f"Resposta completa enviada para @{target_user}: {response}")
+                except Exception as e:
+                    logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{target_user}: {str(e)}")
+                    bot.send_message(
+                        chat_id=message.chat.id,
+                        text=f"{command_parts[1]} {frase_escolhida.replace('\\', '')}",
+                        disable_web_page_preview=True
+                    )
+                    logging.info(f"Resposta texto puro enviada para @{target_user}: {response}")
+            else:
+                target_user = username
+                try:
+                    bot.send_message(
+                        chat_id=message.chat.id,
+                        text=frase_escolhida,
+                        parse_mode='MarkdownV2',
+                        disable_web_page_preview=True
+                    )
+                    logging.info(f"Resposta enviada para @{target_user}: {frase_escolhida}")
+                    logging.debug(f"Resposta completa enviada para @{target_user}: {frase_escolhida}")
+                except Exception as e:
+                    logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{target_user}: {str(e)}")
+                    bot.send_message(
+                        chat_id=message.chat.id,
+                        text=frase_escolhida.replace('\\', ''),
+                        disable_web_page_preview=True
+                    )
+                    logging.info(f"Resposta texto puro enviada para @{target_user}: {frase_escolhida}")
+
+    except sqlite3.Error as e:
+        logging.error(f"[ERROR] Falha ao acessar banco de dados para @{username}: {str(e)}")
+        response = escape_md_v2('Erro ao buscar xingamentos, tente novamente')
+        try:
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta enviada para @{username}: {response}")
+            logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        except Exception as send_error:
+            logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(send_error)}")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text='Erro ao buscar xingamentos, tente novamente',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta texto puro enviada para @{username}: Erro ao buscar xingamentos")
 
 @bot.message_handler(commands=['remover'])
 def remover_message(message):
     username = message.from_user.username or "Unknown"
     logging.info(f"Mensagem recebida de @{username}: {message.text}")
     logging.debug(f"Pergunta completa de @{username}: {message.text}")
+
     chat_id = message.chat.id
     user_id = message.from_user.id
-    if message.chat.type == 'private':
-        response = tf.escape_markdown_v2('Este comando não pode ser executado em conversas privadas.')
-        tf.send_markdown(bot, message.chat.id, response)
-        logging.info(f"Resposta enviada para @{username}: {response}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response}")
-        return
 
-    admin_ids = [admin.user.id for admin in bot.get_chat_administrators(chat_id) if admin.status != 'creator']
-    owner_id = [admin for admin in bot.get_chat_administrators(chat_id) if admin.status == 'creator'][0].user.id
-    if user_id != owner_id and user_id not in admin_ids:
-        response = tf.escape_markdown_v2('Somente o dono do grupo e administradores podem executar este comando.')
-        tf.send_markdown(bot, message.chat.id, response)
-        logging.info(f"Resposta enviada para @{username}: {response}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response}")
-        return
+    try:
+        if message.chat.type == 'private':
+            response = escape_md_v2('Este comando não pode ser executado em conversas privadas')
+            try:
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=response,
+                    parse_mode='MarkdownV2',
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta enviada para @{username}: {response}")
+                logging.debug(f"Resposta completa enviada para @{username}: {response}")
+            except Exception as e:
+                logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(e)}")
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text='Este comando não pode ser executado em conversas privadas',
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta texto puro enviada para @{username}: Este comando não pode ser executado em conversas privadas")
+            return
 
-    frase_list = message.text.split()
-    if len(frase_list) < 2:
-        response = tf.escape_markdown_v2('Insira um ID válido para remover')
-        tf.send_markdown(bot, message.chat.id, response)
-        logging.info(f"Resposta enviada para @{username}: {response}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response}")
-        return
+        admin_ids = [admin.user.id for admin in bot.get_chat_administrators(chat_id) if admin.status != 'creator']
+        owner_id = [admin for admin in bot.get_chat_administrators(chat_id) if admin.status == 'creator'][0].user.id
+        if user_id != owner_id and user_id not in admin_ids:
+            response = escape_md_v2('Somente o dono do grupo e administradores podem executar este comando')
+            try:
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=response,
+                    parse_mode='MarkdownV2',
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta enviada para @{username}: {response}")
+                logging.debug(f"Resposta completa enviada para @{username}: {response}")
+            except Exception as e:
+                logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(e)}")
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text='Somente o dono do grupo e administradores podem executar este comando',
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta texto puro enviada para @{username}: Somente o dono do grupo e administradores podem executar este comando")
+            return
 
-    frase_id = frase_list[1]
-    if not frase_id.isdigit():
-        response = tf.escape_markdown_v2('Insira um ID válido para remover, ID é um número, seu MACACO!')
-        tf.send_markdown(bot, message.chat.id, response)
-        logging.info(f"Resposta enviada para @{username}: {response}")
-        logging.debug(f"Resposta completa enviada para @{username}: {response}")
-        return
+        frase_list = message.text.split()
+        if len(frase_list) < 2:
+            response = escape_md_v2('Insira um ID válido para remover')
+            try:
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=response,
+                    parse_mode='MarkdownV2',
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta enviada para @{username}: {response}")
+                logging.debug(f"Resposta completa enviada para @{username}: {response}")
+            except Exception as e:
+                logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(e)}")
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text='Insira um ID válido para remover',
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta texto puro enviada para @{username}: Insira um ID válido para remover")
+            return
 
-    conn = sqlite3.connect('frases.db')
-    c = conn.cursor()
-    c.execute("DELETE FROM frases WHERE ID = ?", (frase_id,))
-    conn.commit()
-    conn.close()
-    response = tf.escape_markdown_v2('Xingamento removido com sucesso!')
-    tf.send_markdown(bot, message.chat.id, response)
-    logging.info(f"Resposta enviada para @{username}: {response}")
-    logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        frase_id = frase_list[1]
+        if not frase_id.isdigit():
+            response = escape_md_v2('Insira um ID válido para remover, ID é um número seu MACACO')
+            try:
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=response,
+                    parse_mode='MarkdownV2',
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta enviada para @{username}: {response}")
+                logging.debug(f"Resposta completa enviada para @{username}: {response}")
+            except Exception as e:
+                logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(e)}")
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text='Insira um ID válido para remover, ID é um número seu MACACO',
+                    disable_web_page_preview=True
+                )
+                logging.info(f"Resposta texto puro enviada para @{username}: Insira um ID válido para remover")
+            return
+
+        conn = sqlite3.connect('frases.db')
+        c = conn.cursor()
+        c.execute("DELETE FROM frases WHERE ID = ?", (frase_id,))
+        conn.commit()
+        conn.close()
+        response = escape_md_v2('Xingamento removido com sucesso')
+        try:
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta enviada para @{username}: {response}")
+            logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        except Exception as e:
+            logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(e)}")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text='Xingamento removido com sucesso',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta texto puro enviada para @{username}: Xingamento removido com sucesso")
+
+    except Exception as e:
+        logging.error(f"[ERROR] Falha no handler /remover para @{username}: {str(e)}")
+        response = escape_md_v2('Erro inesperado ao executar o comando /remover, tente novamente')
+        try:
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=response,
+                parse_mode='MarkdownV2',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta enviada para @{username}: {response}")
+            logging.debug(f"Resposta completa enviada para @{username}: {response}")
+        except Exception as send_error:
+            logging.error(f"[ERROR] Falha ao enviar mensagem MarkdownV2 para @{username}: {str(send_error)}")
+            bot.send_message(
+                chat_id=message.chat.id,
+                text='Erro inesperado ao executar o comando /remover, tente novamente',
+                disable_web_page_preview=True
+            )
+            logging.info(f"Resposta texto puro enviada para @{username}: Erro inesperado ao executar o comando /remover")
+
 
 @bot.message_handler(func=lambda message: message.chat.type != 'private' and
                     message.text is not None and
