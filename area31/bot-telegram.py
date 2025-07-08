@@ -1333,82 +1333,47 @@ def ouro_price(message):
             disable_web_page_preview=True
         )
 
+
 @bot.message_handler(commands=['tari'])
 def tari_price(message):
     username = message.from_user.username or "Unknown"
     logging.info(f"Mensagem recebida de @{username}: {message.text}")
     logging.debug(f"Pergunta completa de @{username}: {message.text}")
-    base_url = "https://rest.coincap.io/v3"
-    headers = {"Authorization": f"Bearer {COINCAP_API_KEY}"}
-    assets_url = f"{base_url}/assets?apiKey={COINCAP_API_KEY}"
 
     try:
-        # Passo 1: Verificar se o Tari está na lista de ativos
-        response = requests.get(assets_url, headers=headers, timeout=10)
-        logging.debug(f"Resposta da API para /assets: status_code={response.status_code}")
+        # Consulta à API do CoinGecko (sem autenticação)
+        url = "https://api.coingecko.com/api/v3/simple/price"
+        params = {
+            "ids": "minotari",
+            "vs_currencies": "usd"
+        }
+
+        response = requests.get(url, params=params, timeout=10)
+        logging.debug(f"Resposta da API CoinGecko: status_code={response.status_code}")
         response.raise_for_status()
         data = response.json()
-        logging.debug(f"Dados da API (assets): {data}")
+        logging.debug(f"Dados recebidos: {data}")
 
-        tari_data = next((asset for asset in data['data'] if asset['id'].lower() == 'tari'), None)
-        if not tari_data:
-            response_text = tf.escape_markdown_v2("Tari ainda não está disponível na API da CoinCap.")
-            bot.send_message(
-                chat_id=message.chat.id,
-                text=response_text,
-                parse_mode='MarkdownV2',
-                disable_web_page_preview=True
-            )
-            logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-            logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
-            return
+        price = data.get("minotari", {}).get("usd", None)
 
-        # Passo 2: Consultar o preço do Tari usando o ID correto
-        tari_id = tari_data['id']
-        url = f"{base_url}/assets/{tari_id}?apiKey={COINCAP_API_KEY}"
-        response = requests.get(url, headers=headers, timeout=10)
-        logging.debug(f"Resposta da API para /tari: status_code={response.status_code}")
-        response.raise_for_status()
-        data = response.json()
-        logging.debug(f"Dados da API: {data}")
-
-        if 'data' in data and 'priceUsd' in data['data']:
-            price = round(float(data['data']['priceUsd']), 4)
-            formatted_price = format_price(price)  # Assumindo que format_price está definida
+        if price is None:
+            response_text = tf.escape_markdown_v2("Tari ainda não tem cotação disponível.")
+        else:
+            formatted_price = format_price(price)  # Assumindo que você tenha essa função definida
             escaped_price = tf.escape_markdown_v2(f"${formatted_price}")
             response_text = f"Cotação atual do Tari em dólar: **{escaped_price}**"
-            bot.send_message(
-                chat_id=message.chat.id,
-                text=response_text,
-                parse_mode='MarkdownV2',
-                disable_web_page_preview=True
-            )
-            logging.info(f"Resposta enviada para @{username}: {response_text}")
-            logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
-        else:
-            response_text = tf.escape_markdown_v2("Erro ao obter cotação do Tari: Dados de preço não disponíveis.")
-            bot.send_message(
-                chat_id=message.chat.id,
-                text=response_text,
-                parse_mode='MarkdownV2',
-                disable_web_page_preview=True
-            )
-            logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-            logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
-    except requests.exceptions.HTTPError as e:
-        status_code = e.response.status_code if e.response else "Unknown"
-        response_text = tf.escape_markdown_v2(f"Erro ao consultar Tari: Problema na API (HTTP {status_code})")
         bot.send_message(
             chat_id=message.chat.id,
             text=response_text,
             parse_mode='MarkdownV2',
             disable_web_page_preview=True
         )
-        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+        logging.info(f"Resposta enviada para @{username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
 
     except requests.exceptions.RequestException as e:
+        logging.error(f"[ERROR] Falha de conexão na consulta do Tari para @{username}: {str(e)}", exc_info=True)
         response_text = tf.escape_markdown_v2("Erro ao consultar Tari: Falha na conexão com a API")
         bot.send_message(
             chat_id=message.chat.id,
@@ -1416,10 +1381,9 @@ def tari_price(message):
             parse_mode='MarkdownV2',
             disable_web_page_preview=True
         )
-        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
     except (KeyError, TypeError, ValueError) as e:
+        logging.error(f"[ERROR] Resposta inválida ao consultar Tari para @{username}: {str(e)}", exc_info=True)
         response_text = tf.escape_markdown_v2("Erro ao consultar Tari: Resposta inválida da API")
         bot.send_message(
             chat_id=message.chat.id,
@@ -1427,12 +1391,9 @@ def tari_price(message):
             parse_mode='MarkdownV2',
             disable_web_page_preview=True
         )
-        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
     except Exception as e:
-        error_msg = f"[ERROR] Inesperado no handler /tari para @{username}: {str(e)}"
-        logging.error(error_msg, exc_info=True)
+        logging.error(f"[ERROR] Inesperado no handler /tari para @{username}: {str(e)}", exc_info=True)
         response_text = tf.escape_markdown_v2("Erro inesperado ao consultar Tari. Tente novamente!")
         bot.send_message(
             chat_id=message.chat.id,
@@ -1440,8 +1401,6 @@ def tari_price(message):
             parse_mode='MarkdownV2',
             disable_web_page_preview=True
         )
-        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
 @bot.message_handler(commands=['xmr'])
 def handle_xmr(message):
