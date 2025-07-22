@@ -290,7 +290,7 @@ def update_chat_memory(message):
     chat_memory[chat_id].append({"role": role, "content": content, "user_id": user_id})
     logging.debug(f"Adicionada ao chat_memory (chat_id {chat_id}, role: {role}, user_id: {user_id}): {content[:50]}...")
 
-    if len(chat_memory[chat_id]) > 10:
+    if len(chat_memory[chat_id]) > 2:
         chat_memory[chat_id] = chat_memory[chat_id][-10:]
         logging.debug(f"Chat_memory para chat_id {chat_id} limitado a 10 mensagens")
 
@@ -826,6 +826,7 @@ def help_message(message):
             "/euro - Exibe a cotação do euro em reais",
             "/bch - Exibe a cotação do Bitcoin Cash em dólares",
             "/btc - Exibe a cotação do Bitcoin em dólares",
+            "/bct - Não vou nem explicar kkkkkk",
             "/xmr - Exibe a cotação do Monero em dólares",
             "/tari - Exibe a cotação do Tari em dólares",
             "/ouro - Exibe a cotação do ouro (Tether Gold) em dólares",
@@ -923,6 +924,36 @@ def list_message(message):
         tf.send_markdown(bot, message.chat.id, response)
         logging.info(f"Resposta de erro enviada para @{username}: {response}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response}")
+
+
+@bot.message_handler(commands=['bct'])
+def reais_message(message):
+    username = message.from_user.username or "Unknown"
+    logging.info(f"Mensagem recebida de @{username}: {message.text}")
+    logging.debug(f"Pergunta completa de @{username}: {message.text}")
+    try:
+        escaped_message = tf.escape_markdown_v2("Safadeeeenho....")
+        response_text = f"**{escaped_message}**"
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+        logging.info(f"Resposta enviada para @{username}: {response_text}")
+        logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
+    except Exception as e:
+        error_msg = f"[ERROR] Inesperado no handler /bct para @{username}: {str(e)}"
+        logging.error(error_msg, exc_info=True)
+        response_text = tf.escape_markdown_v2("Erro ao processar o comando /bct. Tente novamente!")
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=response_text,
+            parse_mode='MarkdownV2',
+            disable_web_page_preview=True
+        )
+        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
+        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
 
 @bot.message_handler(commands=['real'])
