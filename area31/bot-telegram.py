@@ -833,7 +833,8 @@ def help_message(message):
             "/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...",
             "/youtube - Exibe resultados de busca de vídeos no YouTube",
             "/search - Exibe resultados de busca no Google",
-            "/imagem - Gera uma imagem a partir de um texto (ex.: /imagem porco deitado na grama)"
+            "/imagem - Gera uma imagem a partir de um texto (ex.: /imagem porco deitado na grama)",
+            "/clean - Limpa da memória do Bot os chats anteriores"
         ]
         help_text = tf.bold("Comandos disponíveis:") + "\n" + "\n".join(itens)
         tf.send_html(bot, message.chat.id, help_text)
@@ -955,6 +956,15 @@ def reais_message(message):
         logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
 
+
+@bot.message_handler(commands=['clean'])
+def clean_chat_memory(message):
+    global chat_memory, stored_info, last_image_prompt
+    chat_memory.clear()
+    stored_info.clear()
+    last_image_prompt.clear()
+    bot.reply_to(message, "Memória do chat limpa com sucesso.")
+    logging.debug("Memória do chat limpa manualmente pelo comando /clean")
 
 @bot.message_handler(commands=['real'])
 def reais_message(message):
