@@ -830,6 +830,7 @@ def help_message(message):
             "/xmr - Exibe a cotação do Monero em dólares",
             "/tari - Exibe a cotação do Tari em dólares",
             "/ouro - Exibe a cotação do ouro (Tether Gold) em dólares",
+            "/prata - Exibe a cotação da prata (XAG) em dólares",
             "/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...",
             "/youtube - Exibe resultados de busca de vídeos no YouTube",
             "/search - Exibe resultados de busca no Google",
@@ -1269,6 +1270,46 @@ def bch_price(message):
             parse_mode='MarkdownV2',
             disable_web_page_preview=True
         )
+
+
+@bot.message_handler(commands=['prata'])
+def prata_price(message):
+    username = message.from_user.username or "Unknown"
+
+    # Lê o token do arquivo
+    try:
+        with open("token-apiseddotcom.cfg") as f:
+            api_key = f.read().strip()
+    except Exception as e:
+        bot.reply_to(message, f"Erro ao ler token: {e}")
+        return
+
+    base_url = "https://metals.g.apised.com/v1/latest"
+    params = {"symbols": "XAG", "base_currency": "USD"}
+    headers = {"x-api-key": api_key}
+
+    try:
+        response = requests.get(base_url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("status") == "success" and "rates" in data["data"]:
+            silver_price = float(data["data"]["rates"]["XAG"])
+            silver_per_gram = silver_price / 31.1035
+            silver_per_kilo = silver_per_gram * 1000
+            response_text = (
+                f"Cotação atual da prata (XAG) em dólar:\n"
+                f"${silver_price:.2f} por onça troy (31,1035 gramas)\n"
+                f"${silver_per_gram:.2f} por grama\n"
+                f"${silver_per_kilo:.2f} por quilo"
+            )
+        else:
+            response_text = f"@{username}, não consegui pegar a cotação da Prata (XAG)."
+
+    except Exception as e:
+        response_text = f"@{username}, erro ao consultar API: {e}"
+
+    bot.reply_to(message, response_text)
 
 @bot.message_handler(commands=['ouro'])
 def ouro_price(message):
