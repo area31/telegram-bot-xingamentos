@@ -641,7 +641,7 @@ def responder(message):
                 raise
 
         response_time = time.time() - start_time
-        if not answer or len(answer) < 20:
+        if not answer or len(answer.strip()) < 3:
             answer = "Opa, não consegui processar direito sua instrução. Tenta explicar de novo ou pedir algo diferente!"
             logging.debug(f"Resposta padrão usada para @{username}: {answer}")
 
