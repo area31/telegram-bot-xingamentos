@@ -123,6 +123,13 @@ stored_info = {}
 chat_memory = {}
 last_image_prompt = {}
 
+# Auto limpeza, combinação de tempo ocioso e limite de tamanho
+CLEAN_IDLE_SECS = 15 * 60  # 15 minutos
+CLEAN_MAX_MESSAGES = 20     # máximo de mensagens por chat na memória
+
+last_activity = {}
+_last_global_clean_ts = 0
+
 # Limpa o chat_memory na inicialização
 chat_memory.clear()
 logging.debug("chat_memory limpo na inicialização")
@@ -207,56 +214,102 @@ def to_html(text: str) -> str:
 
     return html
 
+def _maybe_autoclean(now=None):
+    """
+    Limpa contextos muito antigos e corta histórico muito grande, sem bloquear o fluxo.
+    Regras, se um chat ficou ocioso por mais que CLEAN_IDLE_SECS, apaga o contexto dele.
+    Se um chat passou de CLEAN_MAX_MESSAGES, mantém só o final.
+    """
+    global _last_global_clean_ts
+    now = now or time.time()
+
+    # roda no máximo uma varredura por minuto, pra não pesar
+    if now - _last_global_clean_ts < 60:
+        return
+    _last_global_clean_ts = now
+
+    # varredura dos chats
+    to_delete = []
+    for chat_id, msgs in list(chat_memory.items()):
+        last = last_activity.get(chat_id, 0)
+        if last and (now - last) > CLEAN_IDLE_SECS:
+            to_delete.append(chat_id)
+            continue
+        if len(msgs) > CLEAN_MAX_MESSAGES:
+            chat_memory[chat_id] = msgs[-CLEAN_MAX_MESSAGES:]
+            logging.debug(f"chat_memory cortado para {len(chat_memory[chat_id])} mensagens no chat {chat_id}")
+
+    for chat_id in to_delete:
+        chat_memory.pop(chat_id, None)
+        stored_info.pop(chat_id, None)
+        last_image_prompt.pop(chat_id, None)
+        last_activity.pop(chat_id, None)
+        logging.debug(f"chat_memory limpo por ociosidade no chat {chat_id}")
+
 def get_chat_history(message, reply_limit: int = 12) -> list:
     chat_id = message.chat.id
     user_id = message.from_user.id if message.from_user else None
-    history = []
+    events = []
 
-    logging.debug(f"Construindo histórico para chat_id {chat_id} com reply_limit {reply_limit}")
+    # mensagem atual
+    content_now = message.text or message.caption or "[Imagem]"
+    events.append({
+        "role": "user",
+        "content": content_now,
+        "user_id": user_id,
+        "ts": getattr(message, "date", None) or time.time(),
+        "mid": getattr(message, "message_id", None)
+    })
 
-    # Sempre adiciona a mensagem atual
-    content = message.text or message.caption or "[Imagem]"
-    history.append({"role": "user", "content": content, "user_id": user_id})
-    logging.debug(f"Adicionada mensagem atual do usuário: {content[:50]}...")
-
-    # Coleta mensagens encadeadas (reply_to_message)
+    # cadeia de replies
     if message.reply_to_message:
-        current_message = message
-        while current_message.reply_to_message and len(history) < reply_limit:
-            previous_message = current_message.reply_to_message
-            previous_user_id = previous_message.from_user.id if previous_message.from_user else None
-            role = "assistant" if previous_user_id and previous_user_id == bot.get_me().id else "user"
-            content = previous_message.text or previous_message.caption or "[Imagem]"
-            history.append({"role": role, "content": content, "user_id": previous_user_id})
-            logging.debug(f"Adicionada mensagem encadeada (role: {role}, user_id: {previous_user_id}): {content[:50]}...")
-            current_message = previous_message
-        history.reverse()
+        current = message
+        while current.reply_to_message and len(events) < reply_limit * 2:
+            prev = current.reply_to_message
+            prev_uid = prev.from_user.id if prev.from_user else None
+            role = "assistant" if prev_uid and bot.get_me().id == prev_uid else "user"
+            events.append({
+                "role": role,
+                "content": prev.text or prev.caption or "[Imagem]",
+                "user_id": prev_uid,
+                "ts": getattr(prev, "date", None) or 0,
+                "mid": getattr(prev, "message_id", None)
+            })
+            current = prev
 
-    # Adiciona mensagens do chat_memory, se disponíveis
-    if chat_id in chat_memory and len(history) < reply_limit:
-        memory_messages = chat_memory[chat_id].copy()
-        existing_contents = {msg["content"] for msg in history}
-        additional_messages = []
-        for msg in memory_messages:
-            if ("user_id" not in msg or msg["user_id"] is None) and msg["role"] != "assistant":
-                logging.debug(f"Ignorando mensagem do chat_memory sem user_id: {msg['content'][:50]}...")
-                continue
-            if msg["content"] in existing_contents:
-                continue
-            if msg["role"] == "assistant" or (user_id and msg.get("user_id") == user_id):
-                additional_messages.append(msg)
-        for msg in additional_messages[:reply_limit - len(history)]:
-            history.insert(0, msg)
-            logging.debug(f"Adicionada mensagem do chat_memory (role: {msg['role']}, user_id: {msg.get('user_id')}): {msg['content'][:50]}...")
+    # memória do chat
+    if chat_id in chat_memory:
+        for msg in chat_memory[chat_id]:
+            events.append({
+                "role": msg.get("role", "user"),
+                "content": msg.get("content", ""),
+                "user_id": msg.get("user_id"),
+                "ts": msg.get("ts", 0),
+                "mid": msg.get("mid")
+            })
 
-    # Limita por tokens
+    # deduplica priorizando message_id, senão por tripla
+    seen = set()
+    unique = []
+    for m in events:
+        key = ("mid", m.get("mid")) if m.get("mid") is not None else ("triplet", m.get("role"), m.get("content"), m.get("ts"))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(m)
+
+    # ordena por tempo e usa mid como desempate
+    unique.sort(key=lambda m: (m.get("ts", 0), m.get("mid") or 0))
+
+    # mantém só o final
+    history = unique[-reply_limit:]
+
+    # limite por tokens
     token_count = count_tokens(history)
-    max_allowed_tokens = MAX_TOKENS * 0.9  # 90% de MAX_TOKENS
-    logging.debug(f"Contagem inicial de tokens: {token_count}, máximo permitido: {max_allowed_tokens}")
+    max_allowed_tokens = MAX_TOKENS * 0.9
     while token_count > max_allowed_tokens and history:
-        removed_message = history.pop(0)
+        history.pop(0)
         token_count = count_tokens(history)
-        logging.debug(f"Removida mensagem mais antiga ({removed_message['content'][:50]}...), nova contagem: {token_count}")
 
     logging.debug(f"Histórico final obtido para chat_id {chat_id}: {len(history)} mensagens")
     return history
@@ -270,31 +323,51 @@ def get_random_frase() -> str:
     logging.debug("Frase aleatória buscada")
 
 def update_chat_memory(message):
-    chat_id = message.chat.id
-    user_id = message.from_user.id if message.from_user else None
-    if chat_id not in chat_memory:
-        chat_memory[chat_id] = []
+    """
+    Atualiza a memória do chat com a mensagem recebida do usuário.
+    Mantém compatibilidade com o comportamento anterior, agora com:
+    1) poda pelo limite CLEAN_MAX_MESSAGES
+    2) marcação de última atividade por chat
+    3) varredura de limpeza leve via _maybe_autoclean
+    """
+    try:
+        cid = message.chat.id
+        uid = getattr(message.from_user, "id", None)
 
-    bot_username = bot.get_me().username
-    is_direct_message = message.text and bot_username in message.text
-    is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.id == bot.get_me().id
-    if not (message.reply_to_message or is_direct_message or is_reply_to_bot):
-        logging.debug(f"Mensagem ignorada para chat_memory (chat_id {chat_id}): não é uma reply, mensagem direta ou reply ao bot - {message.text or message.caption or '[Imagem]'}[:50]...")
-        return
+        # extrai conteúdo textual mesmo se vier como legenda
+        text = getattr(message, "text", None)
+        if text is None:
+            text = getattr(message, "caption", "")
+        if text is None:
+            text = ""
 
-    role = "user" if not message.from_user or (message.from_user and message.from_user.id != bot.get_me().id) else "assistant"
-    content = message.text or message.caption or "[Imagem]"
-    if user_id is None and role != "assistant":
-        logging.debug(f"Ignorando mensagem sem user_id para chat_memory (chat_id {chat_id}): {content[:50]}...")
-        return
-    chat_memory[chat_id].append({"role": role, "content": content, "user_id": user_id})
-    logging.debug(f"Adicionada ao chat_memory (chat_id {chat_id}, role: {role}, user_id: {user_id}): {content[:50]}...")
+        ts = time.time()
 
-    if len(chat_memory[chat_id]) > 2:
-        chat_memory[chat_id] = chat_memory[chat_id][-10:]
-        logging.debug(f"Chat_memory para chat_id {chat_id} limitado a 10 mensagens")
+        # garante estrutura do chat na memória
+        if cid not in chat_memory:
+            chat_memory[cid] = []
 
-    logging.debug(f"Memória de chat atualizada para chat_id {chat_id}: {len(chat_memory[chat_id])} mensagens")
+        chat_memory[cid].append({
+            "role": "user",
+            "content": text,
+            "user_id": uid,
+            "ts": ts,
+            "mid": getattr(message, "message_id", None),
+        })
+
+        # registra atividade recente do chat
+        last_activity[cid] = ts
+
+        # poda pelo limite configurado
+        if len(chat_memory[cid]) > CLEAN_MAX_MESSAGES:
+            chat_memory[cid] = chat_memory[cid][-CLEAN_MAX_MESSAGES:]
+            logging.debug(f"chat_memory para chat {cid} limitado a {CLEAN_MAX_MESSAGES} mensagens")
+
+        # limpeza leve e global, roda no máx uma vez por minuto
+        _maybe_autoclean(now=ts)
+
+    except Exception as e:
+        logging.exception(f"update_chat_memory falhou, erro {e}")
 
 def format_price(price: float) -> str:
     return f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -352,10 +425,11 @@ def responder(message):
     logging.info(f"Mensagem recebida de @{username}: {message.text or '[No text]'}")
     logging.debug(f"Pergunta completa de @{username}: {message.text or '[No text]'}")
 
-    if message.reply_to_message and message.reply_to_message.from_user:
-        target_username = message.reply_to_message.from_user.username or "Unknown"
-    else:
-        target_username = username
+    #if message.reply_to_message and message.reply_to_message.from_user:
+    #    target_username = message.reply_to_message.from_user.username or "Unknown"
+    #else:
+    #    target_username = username
+    target_username = username
 
     if message.chat.type == 'private' or message.from_user.is_bot:
         response_text = tf.escape_markdown_v2("Desculpe, só respondo em grupos e não a bots!")
@@ -571,7 +645,14 @@ def responder(message):
             answer = "Opa, não consegui processar direito sua instrução. Tenta explicar de novo ou pedir algo diferente!"
             logging.debug(f"Resposta padrão usada para @{username}: {answer}")
 
-        chat_memory[chat_id].append({"role": "assistant", "content": answer, "user_id": bot.get_me().id})
+#        chat_memory[chat_id].append({"role": "assistant", "content": answer, "user_id": bot.get_me().id})
+        chat_memory[chat_id].append({
+            "role": "assistant",
+            "content": answer,
+            "user_id": bot.get_me().id,
+            "ts": time.time(),
+            "mid": None,  # se quiser, depois podemos salvar o message_id retornado pelo send_message
+        })
 
         # Verifica o limite de caracteres do Telegram
         if len(answer) > TELEGRAM_MAX_CHARS:
@@ -586,7 +667,7 @@ def responder(message):
                 chat_id=message.chat.id,
                 text=mensagem,
                 parse_mode='MarkdownV2',
-                reply_to_message_id=message.reply_to_message.message_id if message.reply_to_message else None,
+                reply_to_message_id=message.message_id,
                 disable_web_page_preview=False
             )
             if message.reply_to_message:
@@ -604,7 +685,7 @@ def responder(message):
                     chat_id=message.chat.id,
                     text=html_text,
                     parse_mode='HTML',
-                    reply_to_message_id=message.reply_to_message.message_id if message.reply_to_message else None,
+                    reply_to_message_id=message.message_id,
                     disable_web_page_preview=False
                 )
                 if message.reply_to_message:
