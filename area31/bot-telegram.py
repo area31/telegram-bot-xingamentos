@@ -474,11 +474,11 @@ def responder(message):
     chat_id = message.chat.id
     if len(text_lower) < 15 and chat_id in last_image_prompt:
         try:
-            escaped_prompt = tf.escape_markdown_v2(last_image_prompt[chat_id])
-            response_text = tf.escape_markdown_v2(
-                f"Sua mensagem tá meio pequena! Você tá falando da imagem gerada com o prompt '{escaped_prompt}'? "
-                "Eu não vejo a imagem, mas posso descrever algo sobre esse tema ou responder algo mais específico se tu explicar melhor!"
+            msg_curta = (
+                f"Sua mensagem tá meio pequena! Você tá falando da imagem gerada com o prompt '{last_image_prompt[chat_id]}'? "
+                "Eu não vejo a imagem, mas posso descrever algo, e tema ou responder algo mais específico se tu explicar melhor!"
             )
+            response_text = escape_md_v2_preservando_codigo(msg_curta)
             bot.send_message(
                 chat_id=message.chat.id,
                 text=response_text,
@@ -492,7 +492,8 @@ def responder(message):
         except Exception as e:
             error_msg = f"[ERROR] Falha ao responder mensagem curta após imagem para @{target_username}: {str(e)}"
             logging.error(error_msg, exc_info=True)
-            response_text = tf.escape_markdown_v2("Ops, deu erro ao processar sua mensagem! Tente novamente.")
+            response_text_plain = "Ops, deu erro ao processar sua mensagem! Tente novamente."
+            response_text = escape_md_v2_preservando_codigo(response_text_plain)
             bot.send_message(
                 chat_id=message.chat.id,
                 text=response_text,
