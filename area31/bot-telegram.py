@@ -2022,86 +2022,116 @@ def responder_boa_cabelo(message):
     logging.debug(f"Resposta completa enviada para @{username}: {response}")
 
 
-
 # Cache em memória para imagens
 image_cache = {}
 
-def imagem_advanced(prompt: str, model_priority=["gpt-image-1", "gpt-image-0721-mini-alpha", "dall-e-3", "dall-e-2"], size="1024x1024", retries=3):
+def imagem_advanced(prompt: str, model_priority=None, size=None, retries: int = 3):
     """
-    Gera imagem com fallback automático entre modelos, retry com backoff exponencial e cache.
+    Gera imagem usando somente o modelo definido no CFG
+    Respeita OPENAI_IMAGE_MODEL, OPENAI_IMAGE_SIZE, OPENAI_IMAGE_QUALITY
+    Não tenta modelos alternativos
+    Usa cache em memória
+    Retorna URL para DALL·E e data URL base64 para gpt-image-*
     """
     import time
-    from openai import OpenAI, OpenAIError
+    import os
+    from openai import OpenAI
 
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    # usa apenas o modelo do cfg
+    model = OPENAI_IMAGE_MODEL
 
-    # Verifica cache em memória
-    cache_key = hash((prompt, tuple(model_priority), size))
+    # normaliza size e quality conforme o modelo escolhido
+    if model == "dall-e-2":
+        allowed_sizes = {"256x256", "512x512", "1024x1024"}
+        eff_size = size if size in allowed_sizes else (OPENAI_IMAGE_SIZE if OPENAI_IMAGE_SIZE in allowed_sizes else "512x512")
+        eff_quality = None
+        want_url = True
+    elif model == "dall-e-3":
+        allowed_sizes = {"1024x1024", "1024x1792", "1792x1024"}
+        eff_size = size if size in allowed_sizes else (OPENAI_IMAGE_SIZE if OPENAI_IMAGE_SIZE in allowed_sizes else "1024x1024")
+        eff_quality = OPENAI_IMAGE_QUALITY if OPENAI_IMAGE_QUALITY in ("standard", "hd") else "standard"
+        want_url = True
+    elif model in ("gpt-image-1", "gpt-image-0721-mini-alpha"):
+        allowed_sizes = {"1024x1024", "1024x1536", "1536x1024", "auto"}
+        eff_size = size if size in allowed_sizes else (OPENAI_IMAGE_SIZE if OPENAI_IMAGE_SIZE in allowed_sizes else "1024x1024")
+        eff_quality = OPENAI_IMAGE_QUALITY if OPENAI_IMAGE_QUALITY in ("low", "medium", "high") else None
+        want_url = False
+    else:
+        raise Exception(f"Modelo de imagem inválido no cfg: {model}")
+
+    # cache key considerando modelo e parâmetros efetivos
+    cache_key = hash((prompt, model, eff_size, eff_quality))
     if cache_key in image_cache:
         logging.debug(f"Imagem encontrada no cache para prompt: {prompt}")
         return image_cache[cache_key]
 
-    attempt = 0
-    for model in model_priority:
-        for try_i in range(retries):
-            try:
-                # Construir argumentos dinamicamente
-                kwargs = {
-                    "model": model,
-                    "prompt": prompt,
-                    "n": 1,
-                    "response_format": "url"
-                }
+    # garante API key no ambiente para o SDK novo
+    if OPENAI_API_KEY and not os.environ.get("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
+    client = OpenAI(api_key=OPENAI_API_KEY)
 
-                kwargs = {
-                    "model": model,
-                    "prompt": prompt,
-                    "n": 1,
-                }
+    # monta kwargs para a geração
+    kwargs = {
+        "model": model,
+        "prompt": prompt,
+        "n": 1,
+        "size": eff_size,
+    }
+    if eff_quality is not None:
+        kwargs["quality"] = eff_quality
+    # somente DALL·E usa response_format url
+    if want_url:
+        kwargs["response_format"] = "url"
 
-                # tamanho e parâmetros por modelo vindos do cfg
-                if model == "dall-e-3":
-                    kwargs["size"] = OPENAI_IMAGE_SIZE
-                    if OPENAI_IMAGE_QUALITY:
-                        kwargs["quality"] = OPENAI_IMAGE_QUALITY
-                    else:
-                        kwargs["quality"] = "standard"
-                    kwargs["response_format"] = "url"
+    last_err = None
+    for attempt in range(1, retries + 1):
+        try:
+            logging.debug(f"[IMAGE] tentando gerar com model={model} size={kwargs.get('size')} quality={kwargs.get('quality')} attempt={attempt}")
+            resp = client.images.generate(**kwargs)
 
-                elif model == "dall-e-2":
-                    kwargs["size"] = OPENAI_IMAGE_SIZE
-                    kwargs["response_format"] = "url"
-                    kwargs.pop("quality", None)
+            if want_url:
+                image_url = resp.data[0].url
+                image_cache[cache_key] = image_url
+                logging.info(f"[IMAGE] sucesso model={model} size={kwargs.get('size')} quality={kwargs.get('quality')}")
+                return image_url
+            else:
+                b64 = resp.data[0].b64_json
+                data_url = f"data:image/png;base64,{b64}"
+                image_cache[cache_key] = data_url
+                logging.info(f"[IMAGE] sucesso model={model} size={kwargs.get('size')} quality={kwargs.get('quality')}")
+                return data_url
 
-                elif model in ("gpt-image-1", "gpt-image-0721-mini-alpha"):
-                    kwargs["size"] = OPENAI_IMAGE_SIZE
-                    if OPENAI_IMAGE_QUALITY:
-                        kwargs["quality"] = OPENAI_IMAGE_QUALITY
-                    kwargs.pop("response_format", None)
+        except Exception as e:
+            err_text = str(e)
+            last_err = e
+            logging.warning(f"Tentativa {attempt} falhou com modelo {model}: {err_text}")
 
-                else:
-                    raise ValueError(f"Modelo de imagem inválido para geração: {model}")
+            if "billing_hard_limit_reached" in err_text or "Billing hard limit has been reached" in err_text:
+                raise Exception("Limite mensal atingido no painel da OpenAI. Aumente o Organization budget ou Project budget em Billing depois Limits.")
 
-
-                resp = client.images.generate(**kwargs)
-                url = resp.data[0].url
-                # Armazena em cache
-                image_cache[cache_key] = url
-                logging.debug(f"Imagem gerada com modelo {model}: {url}")
-                return url
-            except OpenAIError as e:
-                error_detail = f"{type(e).__name__}: Error code: {getattr(e, 'status_code', 'N/A')} - {getattr(e, 'body', str(e))}"
-                # Se erro for BadRequest, passa para próximo modelo
-                if "BadRequestError" in str(e):
-                    logging.info(f"Erro com modelo {model}, tentando próximo modelo: {error_detail}")
-                    break
-                # Para outros erros, retry com backoff
-                logging.warning(f"Tentativa {try_i + 1} falhou com modelo {model}: {error_detail}")
-                time.sleep(2 ** try_i)
+            if "Unknown parameter: 'response_format'" in err_text:
+                kwargs.pop("response_format", None)
                 continue
-        attempt += 1
-    raise Exception(f"Falha ao gerar imagem com todos os modelos: {error_detail}")
+
+            if "Invalid value: 'quality'" in err_text and model == "dall-e-3":
+                kwargs["quality"] = "standard"
+                continue
+
+            if "Invalid value: 'size'" in err_text:
+                if model == "dall-e-2":
+                    kwargs["size"] = "512x512"
+                elif model == "dall-e-3":
+                    kwargs["size"] = "1024x1024"
+                else:
+                    kwargs["size"] = "1024x1024"
+                continue
+
+            time.sleep(min(2 ** (attempt - 1), 4))
+            continue
+
+    raise Exception(f"Falha ao gerar imagem com o modelo configurado {model}: {last_err if last_err else 'erro desconhecido'}")
+
 
 @bot.message_handler(commands=['imagem'])
 def imagem_command(message):
@@ -2121,24 +2151,16 @@ def imagem_command(message):
         logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
         return
 
-    # Enviar mensagem inicial de espera apenas para prompts válidos
     try:
         if IMAGE_AI.lower() == "xai":
             wait_message = "Sua imagem pode levar até 20 segundos para ser gerada. Aguarde, estou processando com xAI..."
-        else:  # openai
+        else:
             wait_message = "Sua imagem pode levar até 2 minutos para ser gerada. Aguarde, estou processando com OpenAI..."
-        response_text = tf.escape_html(wait_message)
-        bot.send_message(
-            chat_id=message.chat.id,
-            text=response_text,
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
+        tf.send_html(bot, message.chat.id, tf.escape_html(wait_message))
         logging.info(f"Mensagem de espera enviada para @{username}: {wait_message}")
     except Exception as e:
         logging.error(f"[ERROR] Falha ao enviar mensagem de espera para @{username}: {str(e)}")
 
-    # Validação do prompt
     if len(prompt) < 15 or len(prompt.split()) < 3:
         response_text = tf.escape_html(
             "O prompt é muito curto ou vago. Forneça uma descrição mais detalhada com pelo menos 3 palavras.\n"
@@ -2154,24 +2176,25 @@ def imagem_command(message):
     try:
         start_time = time.time()
         image_url = None
+        used_model = None
 
         if IMAGE_AI.lower() == "openai":
-            # Usar OPENAI_IMAGE_MODEL como prioridade principal
-            model_priority = [OPENAI_IMAGE_MODEL] + [m for m in ["gpt-image-1", "gpt-image-0721-mini-alpha", "dall-e-3", "dall-e-2"] if m != OPENAI_IMAGE_MODEL]
-            image_url = imagem_advanced(prompt, model_priority=model_priority, retries=3)
+            used_model = OPENAI_IMAGE_MODEL
+            image_url = imagem_advanced(prompt, model_priority=[OPENAI_IMAGE_MODEL], retries=3)
 
         elif IMAGE_AI.lower() == "xai":
+            API_URL = "https://api.x.ai/v1/images/generations"
+            headers = {
+                "Authorization": f"Bearer {XAI_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "grok-2-image",
+                "prompt": prompt,
+                "n": 1
+            }
+            used_model = payload["model"]
             try:
-                API_URL = "https://api.x.ai/v1/images/generations"
-                headers = {
-                    "Authorization": f"Bearer {XAI_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": "grok-2-image",
-                    "prompt": prompt,
-                    "n": 1
-                }
                 resp = requests.post(API_URL, json=payload, headers=headers, timeout=15)
                 resp.raise_for_status()
                 data = resp.json()
@@ -2184,12 +2207,12 @@ def imagem_command(message):
         else:
             raise ValueError(f"Configuração inválida para IMAGE_AI: {IMAGE_AI}. Use 'openai' ou 'xai'.")
 
-        end_time = time.time()
-        time_taken = round(end_time - start_time, 2)
+        time_taken = round(time.time() - start_time, 2)
 
         try:
             caption = (
                 f"🖼️ {tf.italic(tf.escape_html(f'Prompt: {prompt}'))}\n"
+                f"{tf.italic(tf.escape_html(f'Modelo: {used_model}'))}\n"
                 f"{tf.italic(tf.escape_html(f'Gerada com {IMAGE_AI.upper()} em {time_taken} segundos'))}"
             )
             sent_message = bot.send_photo(
@@ -2201,28 +2224,21 @@ def imagem_command(message):
             )
             update_chat_memory(sent_message)
             last_image_prompt[chat_id] = prompt
-            logging.info(f"Imagem enviada para @{username} (prompt: {prompt}, time_taken: {time_taken}s, AI: {IMAGE_AI})")
-            logging.debug(f"Imagem completa enviada para @{username} (prompt: {prompt}, caption: {caption})")
+            logging.info(f"Imagem enviada para @{username} prompt={prompt} modelo={used_model} tempo={time_taken}s AI={IMAGE_AI}")
+            logging.debug(f"Imagem completa enviada para @{username} caption={caption}")
         except Exception as e:
             error_detail = f"Erro ao enviar a imagem: {str(e)}"
             if isinstance(e, requests.exceptions.RequestException):
                 error_detail = f"requests.RequestException: {str(e)}"
             logging.error(f"[ERROR] Falha ao enviar imagem para @{username}: {error_detail}", exc_info=True)
-            response_text = tf.escape_html(f"❌ Erro ao enviar a imagem. Motivo: {error_detail}. Tente novamente mais tarde.")
-            tf.send_html(bot, message.chat.id, response_text)
-            logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-            logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
+            tf.send_html(bot, message.chat.id, tf.escape_html(f"❌ Erro ao enviar a imagem. Motivo: {error_detail}. Tente novamente mais tarde."))
+            logging.info(f"Resposta de erro enviada para @{username}: {error_detail}")
 
     except Exception as e:
         error_detail = str(e)
         logging.error(f"[ERROR] Falha ao gerar imagem para @{username}: {error_detail}", exc_info=True)
-        response_text = tf.escape_html(f"❌ Não consegui gerar a imagem. Motivo: {error_detail}")
-        tf.send_html(bot, message.chat.id, response_text)
-        logging.info(f"Resposta de erro enviada para @{username}: {response_text}")
-        logging.debug(f"Resposta completa de erro enviada para @{username}: {response_text}")
-
-
-
+        tf.send_html(bot, message.chat.id, tf.escape_html(f"❌ Não consegui gerar a imagem. Motivo: {error_detail}"))
+        logging.info(f"Resposta de erro enviada para @{username}: {error_detail}")
 
 # Inicia o bot
 try:
