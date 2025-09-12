@@ -151,11 +151,8 @@ BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'xai')
 XAI_MODEL = config_bot['DEFAULT'].get('XAI_MODEL', 'grok-3-mini-fast-beta')
 IMAGE_AI = config_bot['DEFAULT'].get('IMAGE_AI', 'xai')  # Nova configuração para geração de imagens
 OPENAI_IMAGE_MODEL = config_bot['DEFAULT'].get('OPENAI_IMAGE_MODEL', 'dall-e-2')
-OPENAI_IMAGE_SIZE = config.get("DEFAULT", "OPENAI_IMAGE_SIZE", fallback="1024x1024")
-OPENAI_IMAGE_QUALITY = config.get("DEFAULT", "OPENAI_IMAGE_QUALITY", fallback=None)
-ALLOWED_SIZES = {"256x256", "512x512", "1024x1024"}
-if OPENAI_IMAGE_SIZE not in ALLOWED_SIZES:
-    OPENAI_IMAGE_SIZE = "512x512"
+OPENAI_IMAGE_SIZE = config_bot['DEFAULT'].get('OPENAI_IMAGE_SIZE', '1024x1024')
+OPENAI_IMAGE_QUALITY = config_bot['DEFAULT'].get('OPENAI_IMAGE_QUALITY', None)
 logging.debug(
     f"Configuração do bot: BOT_AI={BOT_AI}, XAI_MODEL={XAI_MODEL}, IMAGE_AI={IMAGE_AI}, "
     f"OPENAI_IMAGE_MODEL={OPENAI_IMAGE_MODEL}, OPENAI_IMAGE_SIZE={OPENAI_IMAGE_SIZE}, "
