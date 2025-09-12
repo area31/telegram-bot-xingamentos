@@ -153,7 +153,14 @@ IMAGE_AI = config_bot['DEFAULT'].get('IMAGE_AI', 'xai')  # Nova configuração p
 OPENAI_IMAGE_MODEL = config_bot['DEFAULT'].get('OPENAI_IMAGE_MODEL', 'dall-e-2')
 OPENAI_IMAGE_SIZE = config.get("DEFAULT", "OPENAI_IMAGE_SIZE", fallback="1024x1024")
 OPENAI_IMAGE_QUALITY = config.get("DEFAULT", "OPENAI_IMAGE_QUALITY", fallback=None)
-logging.debug(f"Configuração do bot: BOT_AI={BOT_AI}, XAI_MODEL={XAI_MODEL}, IMAGE_AI={IMAGE_AI}, OPENAI_IMAGE_MODEL={OPENAI_IMAGE_MODEL}")
+ALLOWED_SIZES = {"256x256", "512x512", "1024x1024"}
+if OPENAI_IMAGE_SIZE not in ALLOWED_SIZES:
+    OPENAI_IMAGE_SIZE = "512x512"
+logging.debug(
+    f"Configuração do bot: BOT_AI={BOT_AI}, XAI_MODEL={XAI_MODEL}, IMAGE_AI={IMAGE_AI}, "
+    f"OPENAI_IMAGE_MODEL={OPENAI_IMAGE_MODEL}, OPENAI_IMAGE_SIZE={OPENAI_IMAGE_SIZE}, "
+    f"OPENAI_IMAGE_QUALITY={OPENAI_IMAGE_QUALITY}"
+)
 
 # Parâmetros gerais pra IA
 MAX_TOKENS = 1000
@@ -2056,22 +2063,22 @@ def imagem_advanced(prompt: str, model_priority=["gpt-image-1", "gpt-image-0721-
                     "n": 1,
                 }
 
-                # tamanho e parâmetros por modelo
+                # tamanho e parâmetros por modelo vindos do cfg
                 if model == "dall-e-3":
-                    kwargs["size"] = OPENAI_IMAGE_SIZE or "1024x1024"
-                    kwargs["quality"] = OPENAI_IMAGE_QUALITY or "standard"
+                    kwargs["size"] = OPENAI_IMAGE_SIZE
+                    if OPENAI_IMAGE_QUALITY:
+                        kwargs["quality"] = OPENAI_IMAGE_QUALITY
+                    else:
+                        kwargs["quality"] = "standard"
                     kwargs["response_format"] = "url"
 
                 elif model == "dall-e-2":
-                    kwargs["size"] = OPENAI_IMAGE_SIZE or "512x512"
+                    kwargs["size"] = OPENAI_IMAGE_SIZE
                     kwargs["response_format"] = "url"
                     kwargs.pop("quality", None)
 
                 elif model in ("gpt-image-1", "gpt-image-0721-mini-alpha"):
-                    if size not in {"256x256", "512x512", "1024x1024"}:
-                        kwargs["size"] = OPENAI_IMAGE_SIZE or "1024x1024"
-                    else:
-                        kwargs["size"] = size
+                    kwargs["size"] = OPENAI_IMAGE_SIZE
                     if OPENAI_IMAGE_QUALITY:
                         kwargs["quality"] = OPENAI_IMAGE_QUALITY
                     kwargs.pop("response_format", None)
