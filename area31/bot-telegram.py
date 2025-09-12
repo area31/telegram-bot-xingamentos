@@ -151,6 +151,8 @@ BOT_AI = config_bot['DEFAULT'].get('BOT_AI', 'xai')
 XAI_MODEL = config_bot['DEFAULT'].get('XAI_MODEL', 'grok-3-mini-fast-beta')
 IMAGE_AI = config_bot['DEFAULT'].get('IMAGE_AI', 'xai')  # Nova configuração para geração de imagens
 OPENAI_IMAGE_MODEL = config_bot['DEFAULT'].get('OPENAI_IMAGE_MODEL', 'dall-e-2')
+OPENAI_IMAGE_SIZE = config.get("DEFAULT", "OPENAI_IMAGE_SIZE", fallback="1024x1024")
+OPENAI_IMAGE_QUALITY = config.get("DEFAULT", "OPENAI_IMAGE_QUALITY", fallback=None)
 logging.debug(f"Configuração do bot: BOT_AI={BOT_AI}, XAI_MODEL={XAI_MODEL}, IMAGE_AI={IMAGE_AI}, OPENAI_IMAGE_MODEL={OPENAI_IMAGE_MODEL}")
 
 # Parâmetros gerais pra IA
@@ -2020,7 +2022,7 @@ def responder_boa_cabelo(message):
 # Cache em memória para imagens
 image_cache = {}
 
-def imagem_advanced(prompt: str, model_priority=["dall-e-3", "dall-e-2", "gpt-4o"], size="1024x1024", retries=3):
+def imagem_advanced(prompt: str, model_priority=["gpt-image-1", "gpt-image-0721-mini-alpha", "dall-e-3", "dall-e-2"], size="1024x1024", retries=3):
     """
     Gera imagem com fallback automático entre modelos, retry com backoff exponencial e cache.
     """
@@ -2046,14 +2048,37 @@ def imagem_advanced(prompt: str, model_priority=["dall-e-3", "dall-e-2", "gpt-4o
                     "n": 1,
                     "response_format": "url"
                 }
-                # Ajustar size e quality com base no modelo
+
+
+                kwargs = {
+                    "model": model,
+                    "prompt": prompt,
+                    "n": 1,
+                }
+
+                # tamanho e parâmetros por modelo
                 if model == "dall-e-3":
-                    kwargs["size"] = "1024x1024"
-                    kwargs["quality"] = "standard"
+                    kwargs["size"] = OPENAI_IMAGE_SIZE or "1024x1024"
+                    kwargs["quality"] = OPENAI_IMAGE_QUALITY or "standard"
+                    kwargs["response_format"] = "url"
+
                 elif model == "dall-e-2":
-                    kwargs["size"] = "512x512"  # Mais econômico
-                else:  # gpt-4o ou outros
-                    kwargs["size"] = "1024x1024"
+                    kwargs["size"] = OPENAI_IMAGE_SIZE or "512x512"
+                    kwargs["response_format"] = "url"
+                    kwargs.pop("quality", None)
+
+                elif model in ("gpt-image-1", "gpt-image-0721-mini-alpha"):
+                    if size not in {"256x256", "512x512", "1024x1024"}:
+                        kwargs["size"] = OPENAI_IMAGE_SIZE or "1024x1024"
+                    else:
+                        kwargs["size"] = size
+                    if OPENAI_IMAGE_QUALITY:
+                        kwargs["quality"] = OPENAI_IMAGE_QUALITY
+                    kwargs.pop("response_format", None)
+
+                else:
+                    raise ValueError(f"Modelo de imagem inválido para geração: {model}")
+
 
                 resp = client.images.generate(**kwargs)
                 url = resp.data[0].url
@@ -2128,7 +2153,7 @@ def imagem_command(message):
 
         if IMAGE_AI.lower() == "openai":
             # Usar OPENAI_IMAGE_MODEL como prioridade principal
-            model_priority = [OPENAI_IMAGE_MODEL] + [m for m in ["dall-e-3", "dall-e-2", "gpt-4o"] if m != OPENAI_IMAGE_MODEL]
+            model_priority = [OPENAI_IMAGE_MODEL] + [m for m in ["gpt-image-1", "gpt-image-0721-mini-alpha", "dall-e-3", "dall-e-2"] if m != OPENAI_IMAGE_MODEL]
             image_url = imagem_advanced(prompt, model_priority=model_priority, retries=3)
 
         elif IMAGE_AI.lower() == "xai":
