@@ -1509,7 +1509,6 @@ def tari_price(message):
     username = message.from_user.username or "Unknown"
     logging.info(f"Mensagem recebida de @{username}: {message.text}")
     logging.debug(f"Pergunta completa de @{username}: {message.text}")
-
     try:
         # Consulta à API do CoinGecko (sem autenticação)
         url = "https://api.coingecko.com/api/v3/simple/price"
@@ -1517,22 +1516,24 @@ def tari_price(message):
             "ids": "minotari",
             "vs_currencies": "usd"
         }
-
         response = requests.get(url, params=params, timeout=10)
         logging.debug(f"Resposta da API CoinGecko: status_code={response.status_code}")
         response.raise_for_status()
         data = response.json()
         logging.debug(f"Dados recebidos: {data}")
-
         price = data.get("minotari", {}).get("usd", None)
-
         if price is None:
             response_text = tf.escape_markdown_v2("Tari ainda não tem cotação disponível.")
         else:
-            formatted_price = format_price(price)  # Assumindo que você tenha essa função definida
-            escaped_price = tf.escape_markdown_v2(f"${formatted_price}")
+            # Formatação condicional exclusiva para Tari
+            if price >= 0.01:
+                # Preço ≥ 0.01: formato encurtado com 2 casas decimais (padrão BR)
+                formatted = f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            else:
+                # Preço < 0.01: valor completo com 6 casas decimais (padrão BR)
+                formatted = f"{price:.6f}".replace(".", ",")
+            escaped_price = tf.escape_markdown_v2(f"${formatted}")
             response_text = f"Cotação atual do Tari em dólar: **{escaped_price}**"
-
         bot.send_message(
             chat_id=message.chat.id,
             text=response_text,
@@ -1541,7 +1542,6 @@ def tari_price(message):
         )
         logging.info(f"Resposta enviada para @{username}: {response_text}")
         logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
-
     except requests.exceptions.RequestException as e:
         logging.error(f"[ERROR] Falha de conexão na consulta do Tari para @{username}: {str(e)}", exc_info=True)
         response_text = tf.escape_markdown_v2("Erro ao consultar Tari: Falha na conexão com a API")
@@ -1551,7 +1551,6 @@ def tari_price(message):
             parse_mode='MarkdownV2',
             disable_web_page_preview=True
         )
-
     except (KeyError, TypeError, ValueError) as e:
         logging.error(f"[ERROR] Resposta inválida ao consultar Tari para @{username}: {str(e)}", exc_info=True)
         response_text = tf.escape_markdown_v2("Erro ao consultar Tari: Resposta inválida da API")
@@ -1561,7 +1560,6 @@ def tari_price(message):
             parse_mode='MarkdownV2',
             disable_web_page_preview=True
         )
-
     except Exception as e:
         logging.error(f"[ERROR] Inesperado no handler /tari para @{username}: {str(e)}", exc_info=True)
         response_text = tf.escape_markdown_v2("Erro inesperado ao consultar Tari. Tente novamente!")
