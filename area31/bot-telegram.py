@@ -2026,51 +2026,51 @@ image_cache = {}
 
 def imagem_advanced(prompt: str, model_priority=None, size=None, retries: int = 3):
     """
-    Gera imagem usando somente o modelo definido no CFG
-    Respeita OPENAI_IMAGE_MODEL, OPENAI_IMAGE_SIZE, OPENAI_IMAGE_QUALITY
-    Não tenta modelos alternativos
-    Usa cache em memória
-    Retorna URL para DALL·E e data URL base64 para gpt-image-*
+    Gera imagem usando somente o modelo definido no CFG.
+    Respeita OPENAI_IMAGE_MODEL, OPENAI_IMAGE_SIZE, OPENAI_IMAGE_QUALITY.
+    Não tenta modelos alternativos.
+    Usa cache em memória.
+    Retorna URL para DALL·E.
+    Retorna BYTES (PNG) para gpt-image-*.
     """
     import time
     import os
+    import base64
     from openai import OpenAI
 
-    # usa apenas o modelo do cfg
     model = OPENAI_IMAGE_MODEL
 
-    # normaliza size e quality conforme o modelo escolhido
     if model == "dall-e-2":
         allowed_sizes = {"256x256", "512x512", "1024x1024"}
         eff_size = size if size in allowed_sizes else (OPENAI_IMAGE_SIZE if OPENAI_IMAGE_SIZE in allowed_sizes else "512x512")
         eff_quality = None
         want_url = True
+
     elif model == "dall-e-3":
         allowed_sizes = {"1024x1024", "1024x1792", "1792x1024"}
         eff_size = size if size in allowed_sizes else (OPENAI_IMAGE_SIZE if OPENAI_IMAGE_SIZE in allowed_sizes else "1024x1024")
         eff_quality = OPENAI_IMAGE_QUALITY if OPENAI_IMAGE_QUALITY in ("standard", "hd") else "standard"
         want_url = True
+
     elif model in ("gpt-image-1", "gpt-image-0721-mini-alpha"):
         allowed_sizes = {"1024x1024", "1024x1536", "1536x1024", "auto"}
         eff_size = size if size in allowed_sizes else (OPENAI_IMAGE_SIZE if OPENAI_IMAGE_SIZE in allowed_sizes else "1024x1024")
         eff_quality = OPENAI_IMAGE_QUALITY if OPENAI_IMAGE_QUALITY in ("low", "medium", "high") else None
         want_url = False
+
     else:
         raise Exception(f"Modelo de imagem inválido no cfg: {model}")
 
-    # cache key considerando modelo e parâmetros efetivos
     cache_key = hash((prompt, model, eff_size, eff_quality))
     if cache_key in image_cache:
         logging.debug(f"Imagem encontrada no cache para prompt: {prompt}")
         return image_cache[cache_key]
 
-    # garante API key no ambiente para o SDK novo
     if OPENAI_API_KEY and not os.environ.get("OPENAI_API_KEY"):
         os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
     client = OpenAI(api_key=OPENAI_API_KEY)
 
-    # monta kwargs para a geração
     kwargs = {
         "model": model,
         "prompt": prompt,
@@ -2079,7 +2079,6 @@ def imagem_advanced(prompt: str, model_priority=None, size=None, retries: int = 
     }
     if eff_quality is not None:
         kwargs["quality"] = eff_quality
-    # somente DALL·E usa response_format url
     if want_url:
         kwargs["response_format"] = "url"
 
@@ -2094,12 +2093,12 @@ def imagem_advanced(prompt: str, model_priority=None, size=None, retries: int = 
                 image_cache[cache_key] = image_url
                 logging.info(f"[IMAGE] sucesso model={model} size={kwargs.get('size')} quality={kwargs.get('quality')}")
                 return image_url
-            else:
-                b64 = resp.data[0].b64_json
-                data_url = f"data:image/png;base64,{b64}"
-                image_cache[cache_key] = data_url
-                logging.info(f"[IMAGE] sucesso model={model} size={kwargs.get('size')} quality={kwargs.get('quality')}")
-                return data_url
+
+            b64 = resp.data[0].b64_json
+            img_bytes = base64.b64decode(b64)
+            image_cache[cache_key] = img_bytes
+            logging.info(f"[IMAGE] sucesso model={model} size={kwargs.get('size')} quality={kwargs.get('quality')}")
+            return img_bytes
 
         except Exception as e:
             err_text = str(e)
@@ -2130,6 +2129,7 @@ def imagem_advanced(prompt: str, model_priority=None, size=None, retries: int = 
             continue
 
     raise Exception(f"Falha ao gerar imagem com o modelo configurado {model}: {last_err if last_err else 'erro desconhecido'}")
+
 
 
 @bot.message_handler(commands=['imagem'])
@@ -2200,8 +2200,7 @@ def imagem_command(message):
                 image_url = data["data"][0]["url"]
                 logging.debug(f"Imagem gerada pela xAI para @{username}: {image_url}")
             except requests.exceptions.RequestException as e:
-                error_detail = f"requests.RequestException: {str(e)}"
-                raise Exception(error_detail)
+                raise Exception(f"requests.RequestException: {str(e)}")
 
         else:
             raise ValueError(f"Configuração inválida para IMAGE_AI: {IMAGE_AI}. Use 'openai' ou 'xai'.")
@@ -2214,23 +2213,93 @@ def imagem_command(message):
                 f"{tf.italic(tf.escape_html(f'Modelo: {used_model}'))}\n"
                 f"{tf.italic(tf.escape_html(f'Gerada com {IMAGE_AI.upper()} em {time_taken} segundos'))}"
             )
-            sent_message = bot.send_photo(
-                chat_id=message.chat.id,
-                photo=image_url,
-                caption=caption,
-                parse_mode="HTML",
-                reply_to_message_id=message.message_id
-            )
+
+            if used_model in ("dall-e-2", "dall-e-3"):
+                sent_message = bot.send_photo(
+                    chat_id=message.chat.id,
+                    photo=image_url,
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_to_message_id=message.message_id
+                )
+
+            else:
+                import os
+                import random
+                import base64
+
+                base_dir = os.getcwd()
+                try:
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
+                except Exception:
+                    pass
+
+                tmp_dir = os.path.join(base_dir, "tmp")
+                os.makedirs(tmp_dir, exist_ok=True)
+
+                img_bytes = None
+
+                if isinstance(image_url, (bytes, bytearray)):
+                    img_bytes = bytes(image_url)
+
+                elif isinstance(image_url, str) and image_url.startswith("data:image/"):
+                    try:
+                        b64_part = image_url.split(",", 1)[1]
+                        img_bytes = base64.b64decode(b64_part)
+                    except Exception:
+                        raise Exception("Data URL inválida, não consegui decodificar base64.")
+
+                else:
+                    raise Exception("Modelo não retornou URL curta e também não retornou bytes nem data URL base64.")
+
+                fname = f"img_{int(time.time())}_{random.randint(1000,9999)}.png"
+                fpath = os.path.join(tmp_dir, fname)
+
+                with open(fpath, "wb") as f:
+                    f.write(img_bytes)
+
+                try:
+                    files = []
+                    for x in os.listdir(tmp_dir):
+                        p = os.path.join(tmp_dir, x)
+                        if os.path.isfile(p) and x.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                            files.append(p)
+
+                    files.sort(key=lambda p: os.path.getmtime(p))
+                    excess = len(files) - 50
+                    if excess > 0:
+                        for old in files[:excess]:
+                            try:
+                                os.remove(old)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+                with open(fpath, "rb") as photo_fp:
+                    sent_message = bot.send_photo(
+                        chat_id=message.chat.id,
+                        photo=photo_fp,
+                        caption=caption,
+                        parse_mode="HTML",
+                        reply_to_message_id=message.message_id
+                    )
+
             update_chat_memory(sent_message)
             last_image_prompt[chat_id] = prompt
             logging.info(f"Imagem enviada para @{username} prompt={prompt} modelo={used_model} tempo={time_taken}s AI={IMAGE_AI}")
             logging.debug(f"Imagem completa enviada para @{username} caption={caption}")
+
         except Exception as e:
             error_detail = f"Erro ao enviar a imagem: {str(e)}"
             if isinstance(e, requests.exceptions.RequestException):
                 error_detail = f"requests.RequestException: {str(e)}"
             logging.error(f"[ERROR] Falha ao enviar imagem para @{username}: {error_detail}", exc_info=True)
-            tf.send_html(bot, message.chat.id, tf.escape_html(f"❌ Erro ao enviar a imagem. Motivo: {error_detail}. Tente novamente mais tarde."))
+            tf.send_html(
+                bot,
+                message.chat.id,
+                tf.escape_html(f"❌ Erro ao enviar a imagem. Motivo: {error_detail}. Tente novamente mais tarde.")
+            )
             logging.info(f"Resposta de erro enviada para @{username}: {error_detail}")
 
     except Exception as e:
