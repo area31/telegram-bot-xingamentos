@@ -115,6 +115,11 @@ config_coincap.read('token-coincap.cfg')
 COINCAP_API_KEY = config_coincap['DEFAULT']['TOKEN']
 logging.debug("Token da CoinCap API lido com sucesso")
 
+config_awesome = configparser.ConfigParser()
+config_awesome.read('token-awesome.cfg')
+AWESOME_API_KEY = config_awesome['DEFAULT']['TOKEN']
+logging.debug("Token da Awesome API lido com sucesso")
+
 # Limite de caracteres do Telegram
 TELEGRAM_MAX_CHARS = 4096
 
@@ -1089,7 +1094,7 @@ def euro_message(message):
     username = message.from_user.username or "Unknown"
     logging.info(f"Mensagem recebida de @{username}: {message.text}")
     logging.debug(f"Pergunta completa de @{username}: {message.text}")
-    url = 'https://economia.awesomeapi.com.br/all/EUR-BRL'
+    url = f"https://economia.awesomeapi.com.br/all/EUR-BRL?token={AWESOME_API_KEY}"
 
     try:
         response = requests.get(url, timeout=10)
@@ -1138,7 +1143,7 @@ def dolar_message(message):
     username = message.from_user.username or "Unknown"
     logging.info(f"Mensagem recebida de @{username}: {message.text}")
     logging.debug(f"Pergunta completa de @{username}: {message.text}")
-    url = 'https://economia.awesomeapi.com.br/all/USD-BRL'
+    url = f"https://economia.awesomeapi.com.br/all/USD-BRL?token={AWESOME_API_KEY}"
 
     try:
         response = requests.get(url, timeout=10)
