@@ -13,7 +13,7 @@ need net
 
 start() {
 ebegin "Iniciando o Bot-Telegram \"${USER}\"/${GROUP}"
-echo -e "while true; do\ncd ${BOTDIR} ; python3.13 ${BOTDIR}/bot-telegram.py\ndone" > ${BOTDIR}/start.sh
+echo -e "while true; do\ncd ${BOTDIR} ; python3.14 ${BOTDIR}/bot-telegram.py\ndone" > ${BOTDIR}/start.sh
 chmod +x ${BOTDIR}/start.sh
 su ${USER} -c "nohup ${BOTDIR}/start.sh >> ${BOTDIR}/bot-telegram.log & &> /dev/null"  &> /dev/null
 echo -e "" &> /dev/null

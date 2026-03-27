@@ -13,7 +13,7 @@ from urllib.parse import quote_plus
 from typing import Tuple, Optional
 
 # Adiciona o caminho pras bibliotecas locais
-sys.path.append('/home/morfetico/.local/lib/python3.13/site-packages/')
+sys.path.append('/home/morfetico/.local/lib/python3.14/site-packages/')
 import telebot
 import shutil
 import openai
@@ -843,18 +843,24 @@ def search_command(message):
         logging.debug(f"Resposta completa enviada para @{username}: {response_text}")
         return
 
-    API_KEY = open("token-google.cfg").read().strip()
-    SEARCH_ENGINE_ID = open("token-google-engine.cfg").read().strip()
-    url = (
-        "https://www.googleapis.com/customsearch/v1"
-        f"?key={API_KEY}&cx={SEARCH_ENGINE_ID}&q={quote_plus(query)}"
-    )
+    API_KEY = open("token-search.cfg").read().strip()
+    url = "https://google.serper.dev/search"
 
     try:
-        resp = requests.get(url, timeout=10)
+        headers = {
+            "X-API-KEY": API_KEY,
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "q": query
+        }
+
+        resp = requests.post(url, headers=headers, json=payload, timeout=20)
         resp.raise_for_status()
         data = resp.json()
-        results = data.get("items", [])
+
+        results = data.get("organic", [])
 
         if not results:
             response_text = tf.escape_markdown_v2("Não foram encontrados resultados para a sua pesquisa.")
@@ -872,26 +878,28 @@ def search_command(message):
         for idx, item in enumerate(results[:5], start=1):
             title = item.get("title", "").strip()
             link = item.get("link", "").strip()
-            # Escapa título, texto do link, número do item e URL
+
             escaped_title = tf.escape_markdown_v2(title)
             escaped_link_text = tf.escape_markdown_v2("Link")
             escaped_idx = tf.escape_markdown_v2(str(idx))
             escaped_link = tf.escape_markdown_v2(link)
-            lines.append(f"{escaped_idx}\\. **{escaped_title}** \\— \\[{escaped_link_text}\\]\\({escaped_link}\\)")
 
-        # Escapa o texto do cabeçalho
+            lines.append(f"{escaped_idx}\\. *{escaped_title}* \\- \\[{escaped_link_text}\\]\\({escaped_link}\\)")
+
         escaped_query = tf.escape_markdown_v2(f'Resultados da pesquisa para "{query}"')
-        header = f"🔎 **{escaped_query}**\\:\n"
+        header = f"🔎 *{escaped_query}*\\:\n"
         full_text = header + "\n".join(lines)
-        # Envia a mensagem diretamente
+
         bot.send_message(
             chat_id=message.chat.id,
             text=full_text,
             parse_mode='MarkdownV2',
             disable_web_page_preview=True
         )
+
         logging.info(f"Resposta enviada para @{username}: {full_text[:100]}...")
         logging.debug(f"Resposta completa enviada para @{username}: {full_text}")
+
     except Exception as e:
         logging.error(f"[ERROR] Handler /search para @{username}: {e}", exc_info=True)
         response_text = tf.escape_markdown_v2("Ops, algo deu errado no /search. Tente novamente mais tarde.")
@@ -926,7 +934,7 @@ def help_message(message):
             "/prata - Exibe a cotação da prata (XAG) em dólares",
             "/real - Comando desnecessário pelo óbvio, mas tente executar pra ver...",
             "/youtube - Exibe resultados de busca de vídeos no YouTube",
-            "/search - Exibe resultados de busca no Google",
+            "/search - Exibe resultados de busca",
             "/imagem - Gera uma imagem a partir de um texto (ex.: /imagem porco deitado na grama)",
             "/clean - Limpa da memória do Bot os chats anteriores"
         ]

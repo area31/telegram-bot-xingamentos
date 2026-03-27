@@ -10,12 +10,17 @@ git clone https://github.com/area31/telegram-bot-xingamentos.git
 ## Install deps:
 
 ```bash
-pip3 install --target ~/.local/lib/python3.13/site-packages/ -r requirements.txt --upgrade
+pip3 install --target ~/.local/lib/python3.14/site-packages/ -r requirements.txt --upgrade
+```
+or
+
+```bash
+python3.14 -m pip install --upgrade --target ~/.local/lib/python3.14/site-packages -r requirements.txt
 ```
 
 ## Usage
 ```bash
-python3.13 area31/bot-telegram.py
+python3.14 area31/bot-telegram.py
 ```
 
 ## Import DB using txt file
