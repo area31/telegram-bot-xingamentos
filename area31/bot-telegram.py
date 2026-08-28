@@ -2065,7 +2065,7 @@ def imagem_advanced(prompt: str, model_priority=None, size=None, retries: int = 
         eff_quality = OPENAI_IMAGE_QUALITY if OPENAI_IMAGE_QUALITY in ("standard", "hd") else "standard"
         want_url = True
 
-    elif model in ("gpt-image-1", "gpt-image-0721-mini-alpha"):
+    elif model in ("gpt-image-1", "gpt-image-1-mini", "gpt-image-0721-mini-alpha"):
         allowed_sizes = {"1024x1024", "1024x1536", "1536x1024", "auto"}
         eff_size = size if size in allowed_sizes else (OPENAI_IMAGE_SIZE if OPENAI_IMAGE_SIZE in allowed_sizes else "1024x1024")
         eff_quality = OPENAI_IMAGE_QUALITY if OPENAI_IMAGE_QUALITY in ("low", "medium", "high") else None
